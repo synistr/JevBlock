@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trailhead Outfitters – Hiking boots</title>
+<style>
+  body { font: 16px/1.45 -apple-system, system-ui, sans-serif; margin: 0; }
+  body.locked { overflow: hidden; }
+  header { position: sticky; top: 0; background: #1f3d2b; color: #fff; padding: .8rem 1rem; display: flex; justify-content: space-between; }
+  header a { color: #fff; }
+  main { max-width: 40rem; margin: 0 auto; padding: 1rem; }
+  .product { display: flex; gap: .9rem; padding: .9rem 0; border-bottom: 1px solid #ddd; }
+  .product .img { width: 90px; height: 90px; border-radius: 8px; background: #d9d4c7; flex: none; }
+  .product .price { font-weight: 700; }
+  .tag { font-size: .75rem; color: #777; }
+  .partner-box { margin: 1.2rem 0; padding: 1rem; border: 1px solid #ccc; border-radius: 10px; }
+  .rail { margin: 1.5rem 0; }
+  .rail .items { display: flex; gap: .6rem; overflow-x: auto; }
+  .rail .items a { flex: none; width: 120px; height: 150px; background: #eee; border-radius: 8px; padding: .5rem; font-size: .85rem; color: inherit; }
+  .app-banner { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top: 1px solid #ccc; padding: .8rem 1rem; display: flex; align-items: center; gap: .8rem; box-shadow: 0 -4px 12px rgba(0,0,0,.1); }
+  .app-banner .logo { width: 40px; height: 40px; border-radius: 9px; background: #1f3d2b; }
+  .consent-wall { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; }
+  .consent-wall .box { background: #fff; border-radius: 14px; padding: 1.4rem; margin: 1rem; max-width: 26rem; }
+  button { font: inherit; padding: .5rem .9rem; border-radius: 8px; border: 0; background: #1f3d2b; color: #fff; }
+</style>
+</head>
+<body class="locked">
+<header><a href="/">Trailhead</a><span><a href="#">Cart (0)</a></span></header>
+<main>
+  <h1>Hiking boots</h1>
+  <div class="product sponsored-listing" data-ad-slot="search-top">
+    <div class="img"></div>
+    <div><span class="tag">Sponsored</span><br><a href="https://www.megabootsdirect.example/?ref=trailhead-ads">MegaBoots Summit Pro – waterproof, 40% off at MegaBoots</a><br><span class="price">$89.00</span></div>
+  </div>
+  <div class="product"><div class="img"></div><div><a href="/p/ridge-mid">Ridge Mid GTX hiking boot</a><br><span class="price">$159.00</span><br>4.6 ★ (1,204 reviews)</div></div>
+  <div class="product"><div class="img"></div><div><a href="/p/alpine-light">Alpine Light trail shoe</a><br><span class="price">$119.00</span><br>4.4 ★ (687 reviews)</div></div>
+  <div class="partner-box">
+    <small>Anzeige</small>
+    <p><strong>Jetzt Kreditkarte beantragen</strong> und 50 € Startguthaben sichern. <a href="https://www.bank-partner.example/antrag?utm_medium=display">Mehr erfahren</a></p>
+  </div>
+  <div class="product"><div class="img"></div><div><a href="/p/canyon-low">Canyon Low approach shoe</a><br><span class="price">$129.00</span><br>4.5 ★ (402 reviews)</div></div>
+  <section class="rail recommendations">
+    <h3>Customers also viewed</h3>
+    <div class="items"><a href="/p/socks">Merino hiking socks</a><a href="/p/gaiters">Trail gaiters</a><a href="/p/insoles">Cushioned insoles</a><a href="/p/poles">Trekking poles</a></div>
+  </section>
+  <div class="product"><div class="img"></div><div><a href="/p/summit-gtx">Summit GTX mountaineering boot</a><br><span class="price">$249.00</span><br>4.8 ★ (311 reviews)</div></div>
+</main>
+<div class="app-banner smart-banner"><div class="logo"></div><div style="flex:1"><b>Trailhead app</b><br><small>Get 10% off your first app order</small></div><button>Open</button></div>
+<div class="consent-wall" id="cmp-container" role="dialog" aria-modal="true">
+  <div class="box">
+    <h3>We value your privacy</h3>
+    <p>We and our 312 partners use cookies to personalise content and ads and to measure performance.</p>
+    <button>Accept all</button> <button style="background:#777">Manage choices</button>
+  </div>
+</div>
+</body>
+</html>
