@@ -53,7 +53,7 @@ async function main() {
   else if (stats.sensitive) status.textContent = "Skipped: this page has a password or payment field.";
   else if (stats.error) {
     status.textContent = stats.error;
-    status.className = "error small";
+    status.className = "error";
   } else status.textContent = `Checked ${stats.asked} elements · ${stats.tokens.toLocaleString()} tokens`;
 }
 

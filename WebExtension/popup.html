@@ -5,16 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="ui.css">
 <style>
-  body { padding: 1rem; min-width: 300px; }
-  header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
-  #host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #count { font-size: 2.6rem; font-weight: 700; line-height: 1; }
-  .summary { display: flex; align-items: center; gap: 0.9rem; padding: 0.9rem 0; }
+  body { padding: 16px; min-width: 300px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 0 4px; }
+  h1 { font-size: 28px; }
+  #host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+  #count { font-size: 44px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .summary { display: flex; align-items: center; gap: 12px; padding: 16px; }
   #labels { list-style: none; margin: 0; padding: 0; }
-  #labels li { display: flex; justify-content: space-between; padding: 0.35rem 0; }
-  #labels li + li { border-top: 0.5px solid var(--line); }
-  #status { margin: 0.6rem 0.25rem 0; }
-  .actions { display: flex; justify-content: space-between; margin-top: 0.6rem; padding: 0 0.25rem; }
+  #labels:empty { display: none; }
+  #labels li { display: flex; justify-content: space-between; min-height: 44px; align-items: center; padding: 0 16px; position: relative; }
+  #labels li + li::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: 0.5px solid var(--line); }
+  #status { font-size: 13px; line-height: 1.4; margin: 7px 16px 0; }
+  #status:empty { display: none; }
 </style>
 </head>
 <body>
@@ -23,14 +25,14 @@
     <span id="host" class="muted small"></span>
   </header>
 
-  <div class="card" style="margin-top: 0.9rem">
+  <div class="card" style="margin-top: 16px">
     <div class="summary">
       <span id="count">–</span>
       <span class="muted">hidden on this page</span>
     </div>
     <ul id="labels"></ul>
   </div>
-  <p id="status" class="muted small"></p>
+  <p id="status" class="muted"></p>
 
   <h2>This site</h2>
   <div class="card">
@@ -38,9 +40,9 @@
     <div class="row"><span>Pause on this site</span><input type="checkbox" class="switch" id="pause"></div>
   </div>
 
-  <div class="actions">
-    <button class="danger" id="reset">Forget this site</button>
-    <button class="plain" id="settings">Settings</button>
+  <div class="card" style="margin-top: 28px">
+    <button class="row-button" id="settings" type="button">Settings</button>
+    <button class="row-button danger" id="reset" type="button">Forget this site</button>
   </div>
   <script src="popup.js"></script>
 </body>

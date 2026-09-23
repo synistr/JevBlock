@@ -6,76 +6,138 @@
 <title>JevBlock settings</title>
 <link rel="stylesheet" href="ui.css">
 <style>
-  body { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1rem 6rem; }
-  .category { padding: 0.8rem 0; }
-  .category + .category { border-top: 0.5px solid var(--line); }
-  .category .top { display: flex; align-items: center; gap: 0.75rem; }
-  .category .top input[type="text"] { font-weight: 600; }
-  .category textarea { margin-top: 0.5rem; min-height: 3.5rem; font-size: 0.9rem; }
-  .category .bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 0.2rem; }
-  .threshold { display: flex; align-items: center; gap: 0.8rem; }
-  .threshold input { flex: 1; }
-  .savebar {
-    position: fixed; left: 0; right: 0; bottom: 0; padding: 0.8rem 1rem calc(0.8rem + env(safe-area-inset-bottom));
-    background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    display: flex; justify-content: center; gap: 1rem; align-items: center;
+  body { max-width: 40rem; margin: 0 auto; padding: 20px 16px calc(48px + env(safe-area-inset-bottom)); }
+  header { padding: 0 4px; }
+  header p { margin: 4px 0 0; font-size: 15px; }
+
+  .cat-head { display: flex; align-items: center; gap: 12px; padding-right: 16px; }
+  .cat-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 11px 0 11px 16px; text-align: left; color: var(--fg); }
+  .cat-name::after {
+    content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 0 3px 8px;
+    border: solid var(--faint); border-width: 0 2px 2px 0; transform: rotate(-45deg); transition: transform 0.2s;
   }
-  .savebar button { min-width: 10rem; }
-  p.hint { margin: 0.4rem 0.25rem 0; }
+  .cat.open .cat-name::after { transform: rotate(45deg); margin-bottom: 4px; }
+  .cat-name:empty::before { content: "New category"; color: var(--faint); }
+  .cat-desc {
+    font-size: 15px; color: var(--muted);
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  }
+  .cat.open .cat-desc { display: none; }
+  .cat-edit { display: none; padding: 0 16px 12px; }
+  .cat.open .cat-edit { display: block; }
+  .cat-fields { background: var(--fill); border-radius: 10px; }
+  .cat-fields .name, .cat-fields .description { padding: 10px 12px; }
+  .cat-fields .name { font-weight: 600; }
+  .cat-fields .description { border-top: 0.5px solid var(--line); min-height: 4.5em; line-height: 1.35; }
+  .cat-actions { display: flex; justify-content: space-between; align-items: center; padding-top: 12px; }
+  .cat-actions .done { font-weight: 600; }
+
+  .slider { display: block; padding: 12px 16px 10px; }
+  .slider-top { display: flex; justify-content: space-between; margin-bottom: 6px; }
+  .slider-ends { display: flex; justify-content: space-between; margin-top: 4px; }
+
+  .host { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 10px 16px; }
+  .host span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .remove { width: 24px; height: 24px; flex: none; border-radius: 50%; background: var(--fill); position: relative; }
+  .remove::before, .remove::after {
+    content: ""; position: absolute; left: 50%; top: 50%; width: 10px; height: 1.5px; border-radius: 1px;
+    background: var(--muted); transform: translate(-50%, -50%) rotate(45deg);
+  }
+  .remove::after { transform: translate(-50%, -50%) rotate(-45deg); }
+  #addHost button { font-weight: 600; }
+
+  #extraSelectors { font: 16px/1.4 ui-monospace, Menlo, monospace; min-height: 4.5em; }
+  .value { display: flex; justify-content: space-between; gap: 12px; }
+  .value span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  details summary { list-style: none; display: flex; justify-content: space-between; align-items: center; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::after {
+    content: ""; width: 8px; height: 8px; margin-right: 4px;
+    border: solid var(--faint); border-width: 0 2px 2px 0; transform: rotate(-45deg); transition: transform 0.2s;
+  }
+  details[open] summary::after { transform: rotate(45deg); }
+  details summary:active { background: var(--pressed); }
+  #advanced { margin-top: 28px; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translate(-50%, 8px);
+    max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 20px; font-size: 15px;
+    background: var(--card); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18); opacity: 0; pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
 </style>
 </head>
 <body>
-  <h1>JevBlock</h1>
+  <header>
+    <h1>JevBlock</h1>
+    <p class="muted">Changes save as you make them and apply to pages you open or reload.</p>
+  </header>
 
   <h2>What to hide</h2>
-  <div class="card" id="categories"></div>
-  <p class="hint muted small">Jev sorts every element it is asked about into exactly one of these. Describe each one the way you'd explain it to a person. Elements are hidden when the categories you switched on add up to the threshold.</p>
-  <button class="plain" id="add">Add category</button>
+  <div class="card" id="categories">
+    <button class="row-button" id="add" type="button">Add category</button>
+  </div>
+  <p class="foot">Jev sorts each part of a page into one of these and hides it when it falls into categories you switched on. Tap one to change its description; describe it the way you'd explain it to a person.</p>
 
-  <h2>Threshold</h2>
+  <h2>Certainty</h2>
   <div class="card">
-    <div class="row threshold">
-      <input type="range" id="threshold" min="0.3" max="0.95" step="0.05">
-      <span id="thresholdValue" class="muted"></span>
+    <div class="slider">
+      <div class="slider-top"><span>Hide at</span><span id="thresholdValue" class="muted"></span></div>
+      <input type="range" id="threshold" min="0.3" max="0.95" step="0.05" aria-label="Certainty needed to hide">
+      <div class="slider-ends small muted"><span>Hides more</span><span>Fewer mistakes</span></div>
     </div>
   </div>
-  <p class="hint muted small">Lower hides more (and more mistakes).</p>
-
-  <h2>Extra elements to ask about</h2>
-  <div class="card">
-    <label class="field">
-      <span>CSS selectors, one per line. JevBlock already looks at the whole page in blocks; add selectors here to have smaller parts judged on their own, e.g. <code>aside</code> or <code>[class*="comment"]</code>.</span>
-      <textarea id="extraSelectors" spellcheck="false" autocapitalize="off"></textarea>
-    </label>
-  </div>
+  <p class="foot">How sure Jev has to be before something is hidden.</p>
 
   <h2>Paused sites</h2>
-  <div class="card">
-    <label class="field">
-      <span>One host per line; subdomains are included.</span>
-      <textarea id="pausedHosts" spellcheck="false" autocapitalize="off"></textarea>
-    </label>
+  <div class="card" id="paused">
+    <form class="row" id="addHost">
+      <input type="text" id="newHost" placeholder="example.com" inputmode="url" spellcheck="false" autocapitalize="off" autocorrect="off" aria-label="Site to pause">
+      <button type="submit">Add</button>
+    </form>
   </div>
+  <p class="foot">JevBlock doesn't run on these sites or their subdomains. You can also pause a site from the JevBlock menu in Safari.</p>
 
-  <h2>Jev</h2>
-  <div class="card">
-    <label class="field"><span>Endpoint</span><input type="url" id="endpoint" spellcheck="false" autocapitalize="off"></label>
-    <label class="field"><span>Model</span><input type="text" id="model" spellcheck="false" autocapitalize="off"></label>
-    <label class="field"><span>API key (not needed for jev-1.13-free)</span><input type="password" id="apiKey" autocomplete="off"></label>
-    <div class="row"><span id="testResult" class="muted small"></span><button class="plain" id="test">Test</button></div>
-  </div>
-  <p class="hint muted small" id="usage"></p>
+  <details id="advanced">
+    <summary class="card row">Advanced</summary>
+
+    <h2>Extra elements to check</h2>
+    <div class="card">
+      <label class="field">
+        <span>CSS selectors, one per line</span>
+        <textarea id="extraSelectors" spellcheck="false" autocapitalize="off" autocorrect="off" placeholder="aside"></textarea>
+      </label>
+    </div>
+    <p class="foot">JevBlock already checks the whole page in blocks. Selectors here have smaller parts judged on their own, e.g. <code>[class*="comment"]</code>.</p>
+
+    <h2>Jev</h2>
+    <div class="card">
+      <label class="field"><span>Endpoint</span><input type="url" id="endpoint" spellcheck="false" autocapitalize="off" autocorrect="off"></label>
+      <label class="field"><span>Model</span><input type="text" id="model" spellcheck="false" autocapitalize="off" autocorrect="off"></label>
+      <label class="field"><span>API key</span><input type="password" id="apiKey" autocomplete="off" placeholder="Not needed for jev-1.13-free"></label>
+      <button class="row-button" id="test" type="button">Test connection</button>
+    </div>
+    <p class="foot" id="testResult"></p>
+
+    <h2>Usage</h2>
+    <div class="card" id="usage">
+      <div class="row value"><span>Today</span><span id="usageToday">–</span></div>
+      <div class="row value"><span>Total</span><span id="usageTotal">–</span></div>
+      <div class="row value"><span>Requests</span><span id="usageRequests">–</span></div>
+    </div>
+    <p class="foot" id="usageCost"></p>
+  </details>
 
   <h2>Data</h2>
   <div class="card">
-    <div class="row"><span class="small muted">Remembered verdicts and learned rules for every site.</span><button class="danger" id="clearAll">Clear</button></div>
-    <div class="row"><span class="small muted">Put the built-in categories back.</span><button class="danger" id="resetCategories">Reset</button></div>
+    <button class="row-button danger" id="clearAll" type="button">Forget all sites</button>
+    <button class="row-button danger" id="resetCategories" type="button">Restore default categories</button>
   </div>
+  <p class="foot">Forgetting clears remembered verdicts and learned rules for every site.</p>
 
-  <div class="savebar">
-    <span id="saved" class="muted small"></span>
-    <button id="save">Save</button>
-  </div>
+  <div id="toast" role="status"></div>
   <script src="options.js"></script>
 </body>
 </html>
