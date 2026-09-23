@@ -1,0 +1,17 @@
+[data-jevblock="hidden"] {
+  display: none !important;
+}
+
+/* Reveal mode (popup toggle): show what was hidden, outlined, instead of removing it. */
+html[data-jevblock-reveal] [data-jevblock="hidden"] {
+  display: revert !important;
+  outline: 3px solid #ff3b30 !important;
+  outline-offset: -3px !important;
+  opacity: 0.6 !important;
+}
+
+/* A hidden consent wall or modal often leaves the page scroll-locked. */
+html[data-jevblock-unlock],
+html[data-jevblock-unlock] body {
+  overflow: auto !important;
+}

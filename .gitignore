@@ -1,0 +1,19 @@
+## macOS
+.DS_Store
+
+## Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+## xcodegen-generated project (regenerate with `xcodegen`)
+JevBlock.xcodeproj/
+
+## Local agent configuration
+.claude/
+AGENTS.md
+CLAUDE.md
+
+## Local test harness output
+test/out/

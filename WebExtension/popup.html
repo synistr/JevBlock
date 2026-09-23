@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="ui.css">
+<style>
+  body { padding: 1rem; min-width: 300px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  #host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #count { font-size: 2.6rem; font-weight: 700; line-height: 1; }
+  .summary { display: flex; align-items: center; gap: 0.9rem; padding: 0.9rem 0; }
+  #labels { list-style: none; margin: 0; padding: 0; }
+  #labels li { display: flex; justify-content: space-between; padding: 0.35rem 0; }
+  #labels li + li { border-top: 0.5px solid var(--line); }
+  #status { margin: 0.6rem 0.25rem 0; }
+  .actions { display: flex; justify-content: space-between; margin-top: 0.6rem; padding: 0 0.25rem; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>JevBlock</h1>
+    <span id="host" class="muted small"></span>
+  </header>
+
+  <div class="card" style="margin-top: 0.9rem">
+    <div class="summary">
+      <span id="count">–</span>
+      <span class="muted">hidden on this page</span>
+    </div>
+    <ul id="labels"></ul>
+  </div>
+  <p id="status" class="muted small"></p>
+
+  <h2>This site</h2>
+  <div class="card">
+    <div class="row"><span>Show hidden elements</span><input type="checkbox" class="switch" id="reveal"></div>
+    <div class="row"><span>Pause on this site</span><input type="checkbox" class="switch" id="pause"></div>
+  </div>
+
+  <div class="actions">
+    <button class="danger" id="reset">Forget this site</button>
+    <button class="plain" id="settings">Settings</button>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

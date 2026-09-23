@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JevBlock settings</title>
+<link rel="stylesheet" href="ui.css">
+<style>
+  body { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1rem 6rem; }
+  .category { padding: 0.8rem 0; }
+  .category + .category { border-top: 0.5px solid var(--line); }
+  .category .top { display: flex; align-items: center; gap: 0.75rem; }
+  .category .top input[type="text"] { font-weight: 600; }
+  .category textarea { margin-top: 0.5rem; min-height: 3.5rem; font-size: 0.9rem; }
+  .category .bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 0.2rem; }
+  .threshold { display: flex; align-items: center; gap: 0.8rem; }
+  .threshold input { flex: 1; }
+  .savebar {
+    position: fixed; left: 0; right: 0; bottom: 0; padding: 0.8rem 1rem calc(0.8rem + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    display: flex; justify-content: center; gap: 1rem; align-items: center;
+  }
+  .savebar button { min-width: 10rem; }
+  p.hint { margin: 0.4rem 0.25rem 0; }
+</style>
+</head>
+<body>
+  <h1>JevBlock</h1>
+
+  <h2>What to hide</h2>
+  <div class="card" id="categories"></div>
+  <p class="hint muted small">Jev sorts every element it is asked about into exactly one of these. Describe each one the way you'd explain it to a person. Elements are hidden when the categories you switched on add up to the threshold.</p>
+  <button class="plain" id="add">Add category</button>
+
+  <h2>Threshold</h2>
+  <div class="card">
+    <div class="row threshold">
+      <input type="range" id="threshold" min="0.3" max="0.95" step="0.05">
+      <span id="thresholdValue" class="muted"></span>
+    </div>
+  </div>
+  <p class="hint muted small">Lower hides more (and more mistakes).</p>
+
+  <h2>Extra elements to ask about</h2>
+  <div class="card">
+    <label class="field">
+      <span>CSS selectors, one per line. JevBlock only asks Jev about elements that look suspicious; add selectors here for things your own categories should see, e.g. <code>aside</code> or <code>[class*="related"]</code>.</span>
+      <textarea id="extraSelectors" spellcheck="false" autocapitalize="off"></textarea>
+    </label>
+  </div>
+
+  <h2>Paused sites</h2>
+  <div class="card">
+    <label class="field">
+      <span>One host per line; subdomains are included.</span>
+      <textarea id="pausedHosts" spellcheck="false" autocapitalize="off"></textarea>
+    </label>
+  </div>
+
+  <h2>Jev</h2>
+  <div class="card">
+    <label class="field"><span>Endpoint</span><input type="url" id="endpoint" spellcheck="false" autocapitalize="off"></label>
+    <label class="field"><span>Model</span><input type="text" id="model" spellcheck="false" autocapitalize="off"></label>
+    <label class="field"><span>API key (not needed for jev-1.13-free)</span><input type="password" id="apiKey" autocomplete="off"></label>
+    <div class="row"><span id="testResult" class="muted small"></span><button class="plain" id="test">Test</button></div>
+  </div>
+  <p class="hint muted small" id="usage"></p>
+
+  <h2>Data</h2>
+  <div class="card">
+    <div class="row"><span class="small muted">Remembered verdicts and learned rules for every site.</span><button class="danger" id="clearAll">Clear</button></div>
+    <div class="row"><span class="small muted">Put the built-in categories back.</span><button class="danger" id="resetCategories">Reset</button></div>
+  </div>
+
+  <div class="savebar">
+    <span id="saved" class="muted small"></span>
+    <button id="save">Save</button>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

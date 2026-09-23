@@ -1,0 +1,205 @@
+name: iOS
+
+# Every push to master archives an ad hoc–signed Release IPA and uploads it, encrypted, as the
+# `jevblock-ipa` artifact (artifacts of public repos are downloadable by anyone, and the embedded
+# profile lists device UDIDs). The VPS pulls and decrypts it. Without signing secrets, runs are
+# compile-only.
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - 'test/**'
+      - '**/*.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  XCODEGEN_VERSION: 2.46.0
+  TEAM_ID: LB39V3CF77
+  APP_BUNDLE_ID: com.fkeil.JevBlock
+  EXT_BUNDLE_ID: com.fkeil.JevBlock.Extension
+
+jobs:
+  build:
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
+    timeout-minutes: 30
+    env:
+      HAS_SIGNING: ${{ secrets.IOS_DIST_P12_BASE64 != '' && secrets.IOS_ADHOC_PROFILE_APP_BASE64 != '' && secrets.IOS_ADHOC_PROFILE_EXT_BASE64 != '' && secrets.ARTIFACT_KEY != '' }}
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode
+        run: |
+          # Newest released Xcode 26+/27+. Runner images ship betas next to releases and alias them
+          # (Xcode_27.1.app -> Xcode_27.1_beta.app), so skip apps whose real path says beta, plus
+          # seed builds like 27A5228h.
+          pick=$(for app in /Applications/Xcode*.app; do
+              plist="$app/Contents/version.plist"
+              [ -f "$plist" ] || continue
+              version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")
+              build=$(/usr/libexec/PlistBuddy -c 'Print :ProductBuildVersion' "$plist")
+              real=$(cd "$app" && pwd -P)
+              echo "$app -> $real: $version ($build)" >&2
+              [[ $real == *[Bb]eta* ]] && continue
+              [[ $build =~ ^[0-9]+[A-Z]5[0-9]{3}[a-z]$ ]] && continue
+              [[ ${version%%.*} -ge 26 ]] && echo "$version $app"
+            done | sort -V | tail -1 | cut -d' ' -f2-)
+          [ -n "$pick" ] || { echo "::error::No released Xcode 26+ on this runner"; exit 1; }
+          echo "DEVELOPER_DIR=$pick/Contents/Developer" >> "$GITHUB_ENV"
+          DEVELOPER_DIR="$pick/Contents/Developer" xcodebuild -version
+
+      - name: Install XcodeGen
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Install signing assets
+        if: env.HAS_SIGNING == 'true'
+        env:
+          P12_BASE64: ${{ secrets.IOS_DIST_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
+          APP_PROFILE_BASE64: ${{ secrets.IOS_ADHOC_PROFILE_APP_BASE64 }}
+          EXT_PROFILE_BASE64: ${{ secrets.IOS_ADHOC_PROFILE_EXT_BASE64 }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -k "$keychain" -P "$P12_PASSWORD" -f pkcs12 -A
+          rm "$RUNNER_TEMP/dist.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          echo "KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+          install_profile() {  # $1 = base64 profile, $2 = env var to receive the profile name
+            profile="$RUNNER_TEMP/$2.mobileprovision"
+            echo "$1" | base64 --decode > "$profile"
+            security cms -D -i "$profile" > "$RUNNER_TEMP/$2.plist"
+            uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/$2.plist")
+            name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/$2.plist")
+            for dir in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" \
+                       "$HOME/Library/MobileDevice/Provisioning Profiles"; do
+              mkdir -p "$dir" && cp "$profile" "$dir/$uuid.mobileprovision"
+            done
+            echo "$2=$name" >> "$GITHUB_ENV"
+            echo "Profile: $name ($uuid), expires $(/usr/libexec/PlistBuddy -c 'Print :ExpirationDate' "$RUNNER_TEMP/$2.plist")"
+          }
+          install_profile "$APP_PROFILE_BASE64" APP_PROFILE_NAME
+          install_profile "$EXT_PROFILE_BASE64" EXT_PROFILE_NAME
+
+      - name: Generate Xcode project
+        run: |
+          if [ "$HAS_SIGNING" = true ]; then
+            xcodegen generate --spec project.ci.yml --quiet
+          else
+            xcodegen generate --spec project.yml --quiet
+          fi
+
+      - name: Compile check (unsigned)
+        if: env.HAS_SIGNING != 'true'
+        run: |
+          ci/xcodebuild-quiet.sh build \
+            -project JevBlock.xcodeproj -scheme JevBlock -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            COMPILER_INDEX_STORE_ENABLE=NO CODE_SIGNING_ALLOWED=NO
+
+      - name: Archive
+        if: env.HAS_SIGNING == 'true'
+        run: |
+          ci/xcodebuild-quiet.sh archive \
+            -project JevBlock.xcodeproj -scheme JevBlock -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/JevBlock.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+
+      - name: Export ad hoc IPA
+        if: env.HAS_SIGNING == 'true'
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>release-testing</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$APP_BUNDLE_ID</key><string>$APP_PROFILE_NAME</string>
+              <key>$EXT_BUNDLE_ID</key><string>$EXT_PROFILE_NAME</string>
+            </dict>
+            <key>thinning</key><string>&lt;none&gt;</string>
+          </dict>
+          </plist>
+          EOF
+          ci/xcodebuild-quiet.sh -exportArchive \
+            -archivePath "$RUNNER_TEMP/JevBlock.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Verify, describe and encrypt the IPA
+        if: env.HAS_SIGNING == 'true'
+        env:
+          ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+        run: |
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
+          unzip -q "$RUNNER_TEMP/export/JevBlock.ipa" -d "$RUNNER_TEMP/ipa"
+          app="$RUNNER_TEMP/ipa/Payload/JevBlock.app"
+          appex="$app/PlugIns/JevBlockExtension.appex"
+          codesign --verify --deep --strict "$app"
+          test -f "$appex/manifest.json" || { echo "::error::manifest.json is not at the root of the appex"; ls -R "$appex"; exit 1; }
+          xcrun vtool -show-build "$app/JevBlock" | grep -E 'platform|minos|sdk'
+          jq -n \
+            --arg build "$BUILD_NUMBER" \
+            --arg version "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Info.plist")" \
+            --arg bundle_id "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")" \
+            --arg sha "$GITHUB_SHA" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg message "$(git log -1 --format=%s)" \
+            --arg xcode "$(xcodebuild -version | head -1)" \
+            --arg run_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '$ARGS.named' > "$out/build-info.json"
+          cat "$out/build-info.json"
+          # OpenSSL 3 from Homebrew, so the VPS (OpenSSL 3) decrypts with the same KDF.
+          openssl="$(brew --prefix openssl@3)/bin/openssl"
+          "$openssl" enc -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -salt -pass env:ARTIFACT_KEY \
+            -in "$RUNNER_TEMP/export/JevBlock.ipa" -out "$out/app.ipa.enc"
+
+      - name: Upload IPA
+        if: env.HAS_SIGNING == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: jevblock-ipa
+          path: ${{ runner.temp }}/out/
+          retention-days: 3
+          compression-level: 0
+
+      - name: Upload xcodebuild log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: xcodebuild-log
+          path: ${{ runner.temp }}/xcodebuild.log
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Remove signing keychain
+        if: always() && env.KEYCHAIN != ''
+        run: security delete-keychain "$KEYCHAIN"

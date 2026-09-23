@@ -1,0 +1,21 @@
+# CI-only overlay, used by .github/workflows/ios.yml:
+#   APP_PROFILE_NAME=... EXT_PROFILE_NAME=... xcodegen generate --spec project.ci.yml
+# Switches both targets' Release config to manual ad hoc signing.
+include:
+  - project.yml
+
+targets:
+  JevBlock:
+    settings:
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: ${APP_PROFILE_NAME}
+  JevBlockExtension:
+    settings:
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: ${EXT_PROFILE_NAME}
