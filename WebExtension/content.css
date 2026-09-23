@@ -15,3 +15,7 @@ html[data-jevblock-unlock],
 html[data-jevblock-unlock] body {
   overflow: auto !important;
 }
+html[data-jevblock-unlock] body {
+  position: relative !important;
+  top: auto !important;
+}

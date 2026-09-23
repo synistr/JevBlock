@@ -1,14 +1,17 @@
-// JevBlock content script: finds elements worth asking about, describes them compactly,
-// sends them to the background worker for Jev, and hides what comes back as "hide".
+// JevBlock content script: splits the page into blocks, describes each compactly, sends them to the
+// background worker for Jev, and hides what comes back as "hide". Ad-looking clues are hints in the
+// description and add nested elements of their own; they are not a gate for what Jev sees.
 (() => {
   if (window.top !== window || !/^https?:$/.test(location.protocol)) return;
   const api = globalThis.browser ?? globalThis.chrome;
   const host = location.hostname;
 
-  const MAX_PER_PAGE = 200;
-  const MAX_PER_SCAN = 40;
-  const MAX_SCANS = 15;
-  const RESCAN_MS = 900;
+  const MAX_PER_PAGE = 800; // elements asked about per page load (repeats of a known kind are free)
+  const MAX_PER_SCAN = 120;
+  const MAX_SCANS = 300;
+  const MAX_WALK = 12000; // nodes visited per segmentation pass
+  const MAX_CHECKS = 3; // an element is asked about again when it changes, at most this often
+  const RESCAN_MS = 1000;
   const MAX_SELECTOR_MATCHES = 3;
 
   const IAB_SIZES = [
@@ -45,11 +48,15 @@
     "stripe.com", "paypal.com", "adyen.com", "braintreegateway.com", "checkout.com", "squareup.com", "klarna.com",
     "accounts.google.com", "appleid.apple.com", "login.microsoftonline.com", "recaptcha.net", "hcaptcha.com",
     "challenges.cloudflare.com", "youtube.com", "youtube-nocookie.com", "player.vimeo.com", "open.spotify.com",
-    "platform.twitter.com", "instagram.com", "disqus.com", "maps.google.com", "google.com/maps", "codepen.io",
+    "platform.twitter.com", "instagram.com", "disqus.com", "maps.google.com", "codepen.io",
   ];
-  const TYPEABLE =
-    'textarea, select, input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="image"]):not([type="checkbox"]):not([type="radio"]), [contenteditable]:not([contenteditable="false"])';
+  // Where typed text lives in the DOM (and so in innerText). Plain inputs keep their value out of it.
+  const TYPED_TEXT = 'textarea, [contenteditable]:not([contenteditable="false"])';
   const CLOSE_RE = /(close|dismiss|schlie|fermer|cerrar|no thanks|nein danke)/i;
+  const SKIP_TAGS = new Set(["script", "style", "noscript", "template", "link", "meta", "br", "hr", "head", "option"]);
+  const PROSE_TAGS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "table", "dl", "figcaption", "code"]);
+  const MEDIA_TAGS = new Set(["img", "picture", "svg", "video", "canvas", "audio"]);
+  const NEVER_BLOCK_TAGS = new Set(["html", "body", "main", "form", "input", "select", "textarea", "button", "label"]);
 
   const state = {
     active: false,
@@ -61,8 +68,11 @@
     sensitive: false,
     rules: [],
     extra: [],
+    debug: false,
+    scanMs: 0,
+    maxScanMs: 0,
   };
-  const seen = new WeakSet();
+  const checked = new WeakMap(); // element -> { fp, n }
   const hidden = new Map(); // element -> label
 
   const send = (msg) =>
@@ -80,6 +90,13 @@
 
   function hostIn(h, list) {
     return !!h && list.some((d) => h === d || h.endsWith("." + d));
+  }
+
+  /** Same site, ignoring www./m. and similar subdomain differences. */
+  function sameSite(h) {
+    if (!h) return true;
+    const base = (x) => x.split(".").slice(-2).join(".");
+    return base(h) === base(host);
   }
 
   function clean(text, max) {
@@ -102,25 +119,24 @@
     return `${el.id ?? ""} ${typeof el.className === "string" ? el.className : el.getAttribute("class") ?? ""}`;
   }
 
-  function isVisible(el) {
-    const r = el.getBoundingClientRect();
-    if (r.width < 30 || r.height < 20) return false;
-    const s = getComputedStyle(el);
-    return s.display !== "none" && s.visibility !== "hidden" && Number(s.opacity) > 0.05;
-  }
-
   function isFixed(el) {
     const p = getComputedStyle(el).position;
     return p === "fixed" || p === "sticky";
   }
 
+  function inRange(r) {
+    return r.bottom > -innerHeight && r.top < innerHeight * 3;
+  }
+
   function neverAsk(el) {
-    const tag = el.tagName.toLowerCase();
-    if (["html", "body", "main", "article", "head", "form"].includes(tag)) return true;
+    const tag = el.localName;
+    if (NEVER_BLOCK_TAGS.has(tag)) return true;
     if (el.closest('[data-jevblock="hidden"]')) return true;
     if (tag === "iframe") return hostIn(hostnameOf(el.getAttribute("src")), NEVER_IFRAME_HOSTS);
-    // Anything a person can type into is never described, so typed text cannot leave the page.
-    if (el.matches(TYPEABLE) || el.querySelector(TYPEABLE)) return true;
+    // Never describe something holding typed text, or what the user is typing into right now.
+    if (el.matches(TYPED_TEXT) || el.querySelector(TYPED_TEXT)) return true;
+    const typing = document.activeElement?.matches?.('input, select, ' + TYPED_TEXT) ? document.activeElement : null;
+    if (typing && el.contains(typing)) return true;
     if (el.matches("video[controls]") || el.querySelector("video[controls]")) return true;
     return false;
   }
@@ -140,8 +156,7 @@
     let best = el;
     let cur = el.parentElement;
     for (let i = 0; cur && i < 4; i++) {
-      const tag = cur.tagName.toLowerCase();
-      if (["body", "main", "article", "html", "section"].includes(tag)) break;
+      if (["body", "main", "article", "html", "section"].includes(cur.localName)) break;
       const r = cur.getBoundingClientRect();
       const text = (cur.innerText ?? "").trim();
       if (r.width * r.height > area * 1.6 || text.length > 40) break;
@@ -156,8 +171,7 @@
     let cur = label.parentElement;
     let best;
     for (let i = 0; cur && i < 7; i++) {
-      const tag = cur.tagName.toLowerCase();
-      if (["body", "main", "article", "html"].includes(tag)) break;
+      if (["body", "main", "article", "html"].includes(cur.localName)) break;
       const r = cur.getBoundingClientRect();
       const links = cur.querySelectorAll("a[href]").length;
       const text = (cur.textContent ?? "").trim().length;
@@ -169,21 +183,99 @@
     return best;
   }
 
-  // ---------- discovery ----------
+  // ---------- segmentation: the whole page as blocks ----------
 
-  function discover() {
+  const blockSized = (r) => r.width >= 60 && r.height >= 30;
+
+  /** Lists, grids, feeds and article bodies: several same-tag, same-width children. */
+  function isRepeating(kids) {
+    if (kids.length >= 6) return true;
+    const groups = new Map();
+    for (const { el, r } of kids) {
+      const key = `${el.localName}:${Math.round(r.width / 24)}`;
+      groups.set(key, (groups.get(key) ?? 0) + 1);
+    }
+    return Math.max(0, ...groups.values()) >= 3;
+  }
+
+  /** Plain article text: asking about it costs tokens and never changes the verdict. */
+  function isProse(el) {
+    if (!PROSE_TAGS.has(el.localName) || el.querySelector("iframe")) return false;
+    let linkText = 0;
+    for (const a of el.querySelectorAll("a[href]")) {
+      if (!sameSite(hostnameOf(a.href))) return false;
+      linkText += (a.textContent ?? "").length;
+    }
+    return linkText < (el.textContent ?? "").length * 0.6;
+  }
+
+  function mediaWorthAsking(el) {
+    const link = el.closest("a[href]");
+    return !!link && !sameSite(hostnameOf(link.href));
+  }
+
+  /**
+   * Walks the page top-down. Page-sized containers and repeating lists are split into their children;
+   * anything card- to widget-sized becomes one block. Fixed and sticky layers are always blocks.
+   */
+  function segment() {
+    const vw = innerWidth;
+    const vh = innerHeight;
+    const blocks = [];
+    let visited = 0;
+
+    const visit = (el, depth) => {
+      if (visited++ > MAX_WALK || depth > 60 || SKIP_TAGS.has(el.localName)) return;
+      if (el.getAttribute("data-jevblock") === "hidden") return;
+      const style = getComputedStyle(el);
+      if (style.display === "none") return;
+      if (style.display === "contents") return walk(el, depth);
+      const r = el.getBoundingClientRect();
+      const fixed = style.position === "fixed" || style.position === "sticky";
+      if (!fixed && !inRange(r)) return;
+
+      if (fixed && r.width >= 100 && r.height >= 30 && r.height <= vh * 1.5) {
+        if (style.visibility !== "hidden" && Number(style.opacity) > 0.05) blocks.push(el);
+        return;
+      }
+      if (!blockSized(r)) return walk(el, depth); // tiny wrappers can still hold positioned layers
+      if (isProse(el)) return; // however long: its links and spans are words, not blocks
+      if (style.display === "inline") return walk(el, depth);
+      const big = r.height > vh || r.width * r.height > vw * vh * 0.55;
+      if (big || NEVER_BLOCK_TAGS.has(el.localName)) return walk(el, depth);
+      const kids = [];
+      for (const c of el.children) {
+        const cr = c.getBoundingClientRect();
+        if (blockSized(cr)) kids.push({ el: c, r: cr });
+      }
+      if (kids.length >= 3 && isRepeating(kids)) return walk(el, depth);
+      if (style.visibility === "hidden" || Number(style.opacity) <= 0.05) return;
+      if (MEDIA_TAGS.has(el.localName) && !mediaWorthAsking(el)) return;
+      blocks.push(el);
+    };
+    const walk = (el, depth) => {
+      for (const c of el.children) visit(c, depth + 1);
+      if (el.shadowRoot) for (const c of el.shadowRoot.children) visit(c, depth + 1);
+    };
+
+    if (document.body) walk(document.body, 0);
+    return blocks;
+  }
+
+  // ---------- clues: ad-looking elements, also when nested inside a block ----------
+
+  function clues() {
     const found = new Map(); // element -> Set(signals)
     const add = (el, signal) => {
-      if (!el || seen.has(el)) return;
+      if (!el) return;
       if (!found.has(el)) found.set(el, new Set());
       found.get(el).add(signal);
     };
 
     for (const f of document.querySelectorAll("iframe")) {
-      const h = hostnameOf(f.getAttribute("src"));
       const r = f.getBoundingClientRect();
       if (r.width < 50 || r.height < 30) continue;
-      if (h && h !== host && !host.endsWith("." + h)) add(wrapperOf(f), "third_party_iframe");
+      if (!sameSite(hostnameOf(f.getAttribute("src")))) add(wrapperOf(f), "third_party_iframe");
       else if (iabOf(r.width, r.height)) add(wrapperOf(f), "iab_size");
     }
     for (const el of document.querySelectorAll(ADTECH_ATTRS.map((a) => `[${a}]`).join(",") + ", ins.adsbygoogle")) {
@@ -197,18 +289,16 @@
       else if (WEAK_TOKEN_RE.test(t)) add(el, "weak_token");
     }
     for (const el of document.querySelectorAll(
-      'body > *, [role="dialog"], [aria-modal="true"], [class*="cookie" i], [id*="cookie" i], [class*="consent" i], [id*="consent" i], [class*="modal" i], [class*="popup" i], [class*="overlay" i], [class*="sticky" i], [class*="newsletter" i], [class*="paywall" i]',
+      '[role="dialog"], [aria-modal="true"], [class*="cookie" i], [id*="cookie" i], [class*="consent" i], [id*="consent" i], [class*="modal" i], [class*="popup" i], [class*="overlay" i], [class*="newsletter" i], [class*="paywall" i]',
     )) {
       const r = el.getBoundingClientRect();
-      if (r.width < innerWidth * 0.4 || r.height < 40) continue;
-      if (isFixed(el)) add(el, "overlay");
-      else if (el.matches('[role="dialog"], [aria-modal="true"]') || OVERLAY_TOKEN_RE.test(tokensOf(el))) add(el, "overlay_token");
+      if (r.width >= innerWidth * 0.4 && r.height >= 40) add(el, "overlay_token");
     }
     const walker = document.createTreeWalker(document.body ?? document.documentElement, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const text = node.nodeValue;
       if (text.length > 40 || !LABEL_TEXT_RE.test(text) || !node.parentElement) continue;
-      if (["SCRIPT", "STYLE", "NOSCRIPT"].includes(node.parentElement.tagName)) continue;
+      if (SKIP_TAGS.has(node.parentElement.localName)) continue;
       add(cardOf(node.parentElement), "sponsored_label");
     }
     for (const a of document.querySelectorAll('a[rel~="sponsored" i]')) add(cardOf(a) ?? a, "rel_sponsored");
@@ -219,22 +309,25 @@
         /* invalid selector from settings */
       }
     }
+    return found;
+  }
 
-    // Keep the outermost of nested candidates (hiding it hides the rest), unless it is page-sized.
-    const els = [...found.keys()].filter((el) => {
-      if (neverAsk(el) || !isVisible(el)) return false;
-      const r = el.getBoundingClientRect();
-      return isFixed(el) || r.height < Math.max(1600, innerHeight * 2.5);
-    });
-    const kept = els.filter((el) => !els.some((other) => other !== el && other.contains(el)));
-    return kept.slice(0, MAX_PER_SCAN).map((el) => ({ el, signals: [...found.get(el)] }));
+  /** Signals that hint at what an element is, whether it was found by segmenting or by a clue. */
+  function signalsOf(el, fromClues) {
+    const s = new Set(fromClues ?? []);
+    const t = tokensOf(el);
+    if (STRONG_TOKEN_RE.test(t)) s.add("ad_token");
+    else if (WEAK_TOKEN_RE.test(t)) s.add("weak_token");
+    if (OVERLAY_TOKEN_RE.test(t)) s.add("overlay_token");
+    if (ADTECH_ATTRS.some((a) => el.hasAttribute(a))) s.add("adtech_attr");
+    return [...s];
   }
 
   // ---------- description ----------
 
   function containerOf(el) {
     for (let cur = el.parentElement; cur; cur = cur.parentElement) {
-      const t = cur.tagName.toLowerCase();
+      const t = cur.localName;
       if (["main", "article", "aside", "nav", "header", "footer"].includes(t)) return t;
     }
     return "body";
@@ -242,15 +335,15 @@
 
   function describe(el, signals) {
     const r = el.getBoundingClientRect();
-    const tag = el.tagName.toLowerCase();
+    const tag = el.localName;
     const e = {
       tag,
       size: `${Math.round(r.width)}x${Math.round(r.height)}`,
       position: getComputedStyle(el).position,
       container: containerOf(el),
       above_fold: r.top < innerHeight && r.bottom > 0,
-      signals,
     };
+    if (signals.length) e.signals = signals;
     const iab = iabOf(r.width, r.height);
     if (iab) e.iab = iab;
     const classes = [...el.classList].map((c) => c.slice(0, 32)).slice(0, 6);
@@ -269,22 +362,33 @@
       if (title) e.iframe_title = title;
     }
     const linkHosts = new Set();
+    let links = 0;
+    let external = 0;
     let sponsoredRel = false;
-    for (const a of [...el.querySelectorAll("a[href]")].slice(0, 40)) {
+    for (const a of el.querySelectorAll("a[href]")) {
+      links++;
+      if (links > 60) continue;
       const h = hostnameOf(a.href);
-      if (h && linkHosts.size < 3) linkHosts.add(h);
+      if (h && !sameSite(h)) {
+        external++;
+        if (linkHosts.size < 3) linkHosts.add(h);
+      }
       if (/\bsponsored\b/i.test(a.rel)) sponsoredRel = true;
     }
-    if (linkHosts.size) e.link_hosts = [...linkHosts];
+    if (links) e.links = links;
+    if (external) e.external_links = external;
+    if (linkHosts.size) e.external_hosts = [...linkHosts];
     if (sponsoredRel) e.rel_sponsored = true;
-    const adtech = ADTECH_ATTRS.filter((a) => el.hasAttribute(a) || el.querySelector(`[${a}]`));
-    if (adtech.length) e.adtech_attrs = adtech;
     if (tag !== "iframe") {
-      const text = clean(el.innerText, 150);
+      const heading = el.querySelector("h1, h2, h3, h4");
+      const headingText = heading && clean(heading.innerText, 100);
+      if (headingText) e.heading = headingText;
+      const text = clean(el.innerText, 200);
       if (text) e.text = text;
       const imgs = el.querySelectorAll("img, picture, svg").length;
       if (imgs) e.img_count = Math.min(imgs, 20);
       if (el.querySelector("video")) e.has_video = true;
+      if (el.querySelector("input, button")) e.has_form_controls = true;
       const closeable = [...el.querySelectorAll('button, [role="button"], a')].slice(0, 12).some((b) => {
         const label = `${b.getAttribute("aria-label") ?? ""} ${b.title ?? ""} ${tokensOf(b)} ${(b.textContent ?? "").trim().slice(0, 12)}`;
         return CLOSE_RE.test(label) || /^[×✕✖x]$/i.test((b.textContent ?? "").trim());
@@ -302,16 +406,17 @@
         e.iab ?? `${w}x${h}`,
         (e.classes ?? []).map((c) => c.replace(/\d+/g, "#")).sort(),
         e.iframe_host,
-        e.link_hosts,
-        (e.text ?? "").slice(0, 80).replace(/\d+/g, "#"),
+        e.external_hosts,
+        (e.text ?? "").slice(0, 120).replace(/\d+/g, "#"),
         e.position,
+        e.signals,
       ]),
     );
   }
 
   /** A selector that is stable across loads and matches only a few elements, for pre-paint rules. */
   function stableSelector(el) {
-    const tag = el.tagName.toLowerCase();
+    const tag = el.localName;
     const tryIt = (sel) => {
       try {
         const matches = document.querySelectorAll(sel);
@@ -342,13 +447,39 @@
   // ---------- hiding ----------
 
   function hide(el, label) {
+    const before = el.getBoundingClientRect();
     const wasFixed = isFixed(el);
     el.setAttribute("data-jevblock", "hidden");
     el.setAttribute("data-jevblock-label", label ?? "");
     hidden.set(el, label);
-    if (wasFixed) {
-      const locked = [document.documentElement, document.body].some((n) => n && getComputedStyle(n).overflow === "hidden");
-      if (locked) document.documentElement.setAttribute("data-jevblock-unlock", "");
+    if (wasFixed && isScrollLocked()) document.documentElement.setAttribute("data-jevblock-unlock", "");
+    collapseEmptyWrappers(el, label, before);
+  }
+
+  /** Scroll locks: overflow hidden, or (common on iOS, where that alone doesn't stop scrolling) a fixed body. */
+  function isScrollLocked() {
+    const html = getComputedStyle(document.documentElement);
+    const body = document.body && getComputedStyle(document.body);
+    return html.overflow === "hidden" || body?.overflow === "hidden" || body?.position === "fixed";
+  }
+
+  /** Ad slots often sit in wrappers with a reserved height; hide wrappers left with nothing to show. */
+  function collapseEmptyWrappers(el, label, before) {
+    const maxHeight = Math.max(before.height * 1.5, before.height + 100);
+    let cur = el.parentElement;
+    for (let i = 0; cur && i < 3; i++, cur = cur.parentElement) {
+      if (NEVER_BLOCK_TAGS.has(cur.localName) || ["article", "section", "aside", "nav", "header", "footer"].includes(cur.localName)) return;
+      const r = cur.getBoundingClientRect();
+      if (r.height > maxHeight || r.width > innerWidth + 1) return;
+      if ((cur.innerText ?? "").trim().length > 30) return; // more than an "Advertisement" label left
+      const showsSomething = [...cur.querySelectorAll("img, picture, video, iframe, svg, canvas, a, button, input, select")].some((n) => {
+        if (n.closest('[data-jevblock="hidden"]')) return false;
+        const nr = n.getBoundingClientRect();
+        return nr.width > 0 && nr.height > 0;
+      });
+      if (showsSomething) return;
+      cur.setAttribute("data-jevblock", "hidden");
+      cur.setAttribute("data-jevblock-label", label ?? "");
     }
   }
 
@@ -376,12 +507,43 @@
   // ---------- scanning ----------
 
   let scanTimer;
+  let scanDue = 0;
   let scanning = false;
 
+  /** Never pushes back a scan that is already due sooner, so busy pages still get scanned. */
   function scheduleScan(delay = RESCAN_MS) {
     if (!state.active || state.scans >= MAX_SCANS || state.asked >= MAX_PER_PAGE) return;
+    const due = Date.now() + delay;
+    if (scanTimer && scanDue <= due) return;
     clearTimeout(scanTimer);
-    scanTimer = setTimeout(scan, delay);
+    scanDue = due;
+    scanTimer = setTimeout(() => {
+      scanTimer = null;
+      scan();
+    }, delay);
+  }
+
+  /** Blocks plus clue elements, minus what is hidden, off-screen, unchanged since asked, or private. */
+  function collect() {
+    const bySignal = clues();
+    const els = new Set(segment());
+    for (const [el, signals] of bySignal) {
+      const r = el.getBoundingClientRect();
+      if (!blockSized(r) || (!isFixed(el) && (!inRange(r) || r.height > Math.max(1600, innerHeight * 2.5)))) continue;
+      els.add(el);
+    }
+    const out = [];
+    for (const el of els) {
+      if (neverAsk(el)) continue;
+      const entry = describe(el, signalsOf(el, bySignal.get(el)));
+      const fp = fingerprint(entry);
+      const prev = checked.get(el);
+      if (prev && (prev.fp === fp || prev.n >= MAX_CHECKS)) continue;
+      out.push({ el, entry, fp, top: el.getBoundingClientRect().top });
+    }
+    // Nearest to what the reader sees first.
+    out.sort((a, b) => Math.abs(a.top) - Math.abs(b.top));
+    return out.slice(0, Math.min(MAX_PER_SCAN, MAX_PER_PAGE - state.asked));
   }
 
   async function scan() {
@@ -394,14 +556,19 @@
         return;
       }
       state.sensitive = false;
-      const found = discover().slice(0, MAX_PER_PAGE - state.asked);
+      const started = performance.now();
+      const found = collect();
+      state.scanMs = Math.round(performance.now() - started);
+      state.maxScanMs = Math.max(state.maxScanMs, state.scanMs);
+      if (state.debug) {
+        const { scans, scanMs, maxScanMs, asked, tokens } = state;
+        document.documentElement.setAttribute("data-jevblock-debug", JSON.stringify({ scans, scanMs, maxScanMs, asked, tokens }));
+      }
       if (!found.length) return;
       const byFp = new Map();
       const candidates = [];
-      for (const { el, signals } of found) {
-        seen.add(el);
-        const entry = describe(el, signals);
-        const fp = fingerprint(entry);
+      for (const { el, entry, fp } of found) {
+        checked.set(el, { fp, n: (checked.get(el)?.n ?? 0) + 1 });
         if (!byFp.has(fp)) {
           byFp.set(fp, []);
           const sel = stableSelector(el);
@@ -415,8 +582,11 @@
       state.error = res?.error ?? null;
       state.tokens += res?.tokens ?? 0;
       for (const v of res?.verdicts ?? []) {
-        if (!v.hide) continue;
-        for (const el of byFp.get(v.fp) ?? []) hide(el, v.label);
+        for (const el of byFp.get(v.fp) ?? []) {
+          if (v.hide) hide(el, v.label);
+          // Debug setting: tag every checked element with its verdict, for inspecting misses.
+          if (state.debug) el.setAttribute("data-jevblock-seen", `${v.label} ${v.p}`);
+        }
       }
       send({ type: "badge", count: hiddenCount() });
     } finally {
@@ -425,8 +595,9 @@
   }
 
   function start() {
-    scheduleScan(250);
-    addEventListener("load", () => scheduleScan(500), { once: true });
+    scheduleScan(150);
+    addEventListener("load", () => scheduleScan(400), { once: true });
+    addEventListener("scroll", () => scheduleScan(500), { passive: true });
     new MutationObserver((records) => {
       if (records.some((r) => r.addedNodes.length)) scheduleScan();
     }).observe(document.documentElement, { childList: true, subtree: true });
@@ -448,6 +619,9 @@
         error: state.error,
         tokens: state.tokens,
         asked: state.asked,
+        scans: state.scans,
+        scanMs: state.scanMs,
+        maxScanMs: state.maxScanMs,
         hidden: hiddenCount(),
         byLabel,
         reveal: document.documentElement.hasAttribute("data-jevblock-reveal"),
@@ -472,6 +646,7 @@
       return;
     }
     state.active = true;
+    state.debug = !!res.debug;
     state.extra = (res.extraSelectors ?? "")
       .split("\n")
       .map((s) => s.trim())

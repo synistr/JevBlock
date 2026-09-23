@@ -6,13 +6,16 @@ async function activeTab() {
   return tab;
 }
 
+// Without access to the site, Safari leaves tab.url empty.
+const hostOf = (tab) => (tab?.url ? new URL(tab.url).hostname : "");
+
 function askTab(tabId, msg) {
   return Promise.resolve(api.tabs.sendMessage(tabId, msg)).catch(() => null);
 }
 
 async function main() {
   const tab = await activeTab();
-  const host = tab?.url ? new URL(tab.url).hostname : "";
+  const host = hostOf(tab);
   $("host").textContent = host;
   const [{ settings }, stats, { paused }] = await Promise.all([
     api.runtime.sendMessage({ type: "getSettings" }),
@@ -61,14 +64,16 @@ $("reveal").addEventListener("change", async (e) => {
 
 $("pause").addEventListener("change", async (e) => {
   const tab = await activeTab();
-  await api.runtime.sendMessage({ type: "setPaused", host: new URL(tab.url).hostname, paused: e.target.checked });
+  if (!hostOf(tab)) return;
+  await api.runtime.sendMessage({ type: "setPaused", host: hostOf(tab), paused: e.target.checked });
   api.tabs.reload(tab.id);
   window.close();
 });
 
 $("reset").addEventListener("click", async () => {
   const tab = await activeTab();
-  await api.runtime.sendMessage({ type: "resetSite", host: new URL(tab.url).hostname });
+  if (!hostOf(tab)) return;
+  await api.runtime.sendMessage({ type: "resetSite", host: hostOf(tab) });
   api.tabs.reload(tab.id);
   window.close();
 });

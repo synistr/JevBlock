@@ -47,17 +47,18 @@ const DEFAULTS = {
   endpoint: "https://opencode.ai/zen/v1/systemone",
   model: "jev-1.13-free",
   apiKey: "",
-  threshold: 0.6,
+  threshold: 0.75,
   extraSelectors: "",
   pausedHosts: [],
   categories: DEFAULT_CATEGORIES,
 };
 
-const BATCH = 20;
-const PARALLEL = 3;
+const BATCH = 30;
+const PARALLEL = 4;
 const TIMEOUT_MS = 20_000;
 const CACHE_TTL_MS = 7 * 86_400_000;
-const CACHE_MAX = 400;
+const CACHE_MAX = 1500; // verdicts per site; a page is ~100-200 blocks
+const SITES_MAX = 150; // sites remembered; least recently used go first
 const RULE_MIN_HITS = 2;
 const RULES_MAX = 40;
 const UNTRUSTED_NOTE =
@@ -68,6 +69,9 @@ const UNTRUSTED_NOTE =
 async function getSettings() {
   const { settings } = await api.storage.local.get("settings");
   const merged = { ...DEFAULTS, ...(settings ?? {}) };
+  // Build 1 saved its default threshold of 0.6 with any settings change; whole-page checking needs 0.75.
+  if (!settings?.v && merged.threshold === 0.6) merged.threshold = DEFAULTS.threshold;
+  merged.v = 2;
   if (!Array.isArray(merged.categories) || merged.categories.length < 2) merged.categories = DEFAULT_CATEGORIES;
   return merged;
 }
@@ -97,10 +101,31 @@ async function putSite(host, site) {
   await api.storage.local.set({
     ["site:" + host]: {
       v: site.v,
+      t: now,
       cache: Object.fromEntries(cache.slice(0, CACHE_MAX)),
       rules: Object.fromEntries(rules.slice(0, RULES_MAX)),
     },
   });
+  if (Math.random() < 0.05) await forgetOldSites();
+}
+
+async function forgetOldSites() {
+  const all = await api.storage.local.get(null);
+  const sites = Object.entries(all)
+    .filter(([k]) => k.startsWith("site:"))
+    .sort((a, b) => (b[1].t ?? 0) - (a[1].t ?? 0));
+  const old = sites.slice(SITES_MAX).map(([k]) => k);
+  if (old.length) await api.storage.local.remove(old);
+}
+
+/** Probabilities rounded and without zeros: most of a cached verdict's size. */
+function compact(probs) {
+  const out = {};
+  for (const [k, v] of Object.entries(probs)) {
+    const r = Math.round(v * 100) / 100;
+    if (r > 0) out[k] = r;
+  }
+  return out;
 }
 
 // Serialises read-modify-write of one site's record across overlapping scans.
@@ -112,15 +137,20 @@ function withSite(host, fn) {
   return next;
 }
 
-async function addUsage(tokens) {
-  const day = new Date().toISOString().slice(0, 10);
-  const { usage } = await api.storage.local.get("usage");
-  const u = usage ?? { day, today: 0, total: 0, requests: 0 };
-  if (u.day !== day) Object.assign(u, { day, today: 0 });
-  u.today += tokens;
-  u.total += tokens;
-  u.requests += 1;
-  await api.storage.local.set({ usage: u });
+let usageChain = Promise.resolve();
+function addUsage(tokens) {
+  // Parallel batches finish together; chain the read-modify-write so none is lost.
+  usageChain = usageChain.then(async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    const { usage } = await api.storage.local.get("usage");
+    const u = usage ?? { day, today: 0, total: 0, requests: 0 };
+    if (u.day !== day) Object.assign(u, { day, today: 0 });
+    u.today += tokens;
+    u.total += tokens;
+    u.requests += 1;
+    await api.storage.local.set({ usage: u });
+  }).catch(() => {});
+  return usageChain;
 }
 
 // ---------- decisions ----------
@@ -220,7 +250,7 @@ async function init(host) {
   const rules = Object.entries(site.rules)
     .filter(([, r]) => r.hits >= RULE_MIN_HITS && hidden.has(r.label))
     .map(([sel]) => sel);
-  return { active: true, rules, extraSelectors: settings.extraSelectors };
+  return { active: true, rules, extraSelectors: settings.extraSelectors, debug: !!settings.debug };
 }
 
 /**
@@ -278,7 +308,7 @@ async function classify(host, page, candidates) {
       if (!probs) continue;
       const d = decide(probs, settings);
       verdicts.push({ fp: c.fp, ...d, source: sourceByFp.get(c.fp) });
-      if (sourceByFp.get(c.fp) === "jev") fresh.cache[c.fp] = { p: probs, ts: now };
+      if (sourceByFp.get(c.fp) === "jev") fresh.cache[c.fp] = { p: compact(probs), ts: now };
       else if (fresh.cache[c.fp]) fresh.cache[c.fp].ts = now;
       if (!c.sel) continue;
       if (d.hide) {
