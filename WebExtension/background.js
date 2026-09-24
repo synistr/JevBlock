@@ -32,16 +32,24 @@ const DEFAULT_CATEGORIES = [
     label: "Content",
     hide: false,
     builtin: true,
-    description: "The site's own editorial or functional content: article text, images, comments, product listings",
+    description:
+      "The main content the page is for: article text and its images, product details, search results, listings the user came to browse",
   },
   {
     id: "ui",
     label: "Interface",
     hide: false,
     builtin: true,
-    description: "Navigation, header, footer, search, share buttons or other interface chrome",
+    description: "Navigation, header, footer, search and menus needed to get around the site",
   },
 ];
+
+// Built-in categories are where Jev puts what stays, so they must not claim anything a user may want
+// hidden: the first defaults claimed share buttons and comments. Unedited old texts are replaced.
+const OLD_BUILTIN_DESCRIPTIONS = {
+  content: ["The site's own editorial or functional content: article text, images, comments, product listings"],
+  ui: ["Navigation, header, footer, search, share buttons or other interface chrome"],
+};
 
 const DEFAULTS = {
   endpoint: "https://opencode.ai/zen/v1/systemone",
@@ -73,6 +81,14 @@ async function getSettings() {
   if (!settings?.v && merged.threshold === 0.6) merged.threshold = DEFAULTS.threshold;
   merged.v = 2;
   if (!Array.isArray(merged.categories) || merged.categories.length < 2) merged.categories = DEFAULT_CATEGORIES;
+  let migrated = false;
+  merged.categories = merged.categories.map((c) => {
+    if (!c.builtin || !OLD_BUILTIN_DESCRIPTIONS[c.id]?.includes(c.description)) return c;
+    migrated = true;
+    return { ...c, description: DEFAULT_CATEGORIES.find((d) => d.id === c.id).description };
+  });
+  // Stored too: the content script reads categories from storage to match learned rules to them.
+  if (migrated && settings) await api.storage.local.set({ settings: merged });
   return merged;
 }
 

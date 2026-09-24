@@ -78,7 +78,13 @@ function categoryForm(cat, isNew) {
   description.value = cat.description;
   description.placeholder = "Long personal stories that come before the actual recipe";
   descField.append(el("span", "", "What belongs in it"), description);
-  const hint = el("p", "hint small muted", "Describe it the way you'd explain it to a person.");
+  const hint = el(
+    "p",
+    "hint small muted",
+    cat.builtin
+      ? "Built in: Jev puts things you keep here, so they aren't forced into a hidden category. Keep it narrow: anything it mentions can't be hidden by your own categories."
+      : "Describe it the way you'd explain it to a person.",
+  );
   const problem = el("p", "error small");
   problem.hidden = true;
 
