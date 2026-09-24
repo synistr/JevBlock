@@ -42,6 +42,9 @@
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
     margin-top: 1px; font-size: 13px; line-height: 1.4; color: var(--muted);
   }
+  .cat.off { background: none; border-style: dashed; }
+  .cat.off .cat-name, .cat.off .cat-desc { opacity: 0.55; }
+  .on-field { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 14px; font-weight: 500; cursor: pointer; }
   .cat .edit { padding: 12px 13px; font-family: var(--mono); font-size: 13px; font-weight: 500; }
   .cat form { flex: 1; padding: 13px; }
   .cat form textarea { min-height: 10.5em; }

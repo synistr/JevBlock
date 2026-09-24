@@ -92,6 +92,11 @@ async function getSettings() {
   return merged;
 }
 
+/** Categories that are turned on: the only ones Jev chooses between. */
+function inUse(settings) {
+  return settings.categories.filter((c) => c.enabled !== false);
+}
+
 function categoriesVersion(categories) {
   return hash(JSON.stringify(categories.map((c) => [c.id, c.description])));
 }
@@ -182,7 +187,7 @@ function decide(probs, settings) {
   let hideBest = -1;
   let topLabel;
   let topBest = -1;
-  for (const c of settings.categories) {
+  for (const c of inUse(settings)) {
     const p = probs[c.id] ?? 0;
     if (p > topBest) [topLabel, topBest] = [c.id, p];
     if (c.hide) {
@@ -195,13 +200,13 @@ function decide(probs, settings) {
 }
 
 function hiddenLabels(settings) {
-  return new Set(settings.categories.filter((c) => c.hide).map((c) => c.id));
+  return new Set(inUse(settings).filter((c) => c.hide).map((c) => c.id));
 }
 
 // ---------- Jev ----------
 
 function buildRequest(settings, page, entries) {
-  const criteria = Object.fromEntries(settings.categories.map((c) => [c.id, c.description]));
+  const criteria = Object.fromEntries(inUse(settings).map((c) => [c.id, c.description]));
   const questions = {};
   entries.forEach((_, i) => {
     questions["c" + i] = {
@@ -272,7 +277,7 @@ async function pool(tasks, limit) {
 async function init(host) {
   const settings = await getSettings();
   if (hostPaused(host, settings)) return { active: false, rules: [], extraSelectors: "" };
-  const site = await getSite(host, categoriesVersion(settings.categories));
+  const site = await getSite(host, categoriesVersion(inUse(settings)));
   const hidden = hiddenLabels(settings);
   const rules = Object.entries(site.rules)
     .filter(([, r]) => r.hits >= RULE_MIN_HITS && hidden.has(r.label))
@@ -288,7 +293,7 @@ async function init(host) {
 async function classify(host, page, candidates, cachedOnly = false) {
   const settings = await getSettings();
   if (hostPaused(host, settings)) return { verdicts: [] };
-  const version = categoriesVersion(settings.categories);
+  const version = categoriesVersion(inUse(settings));
   const probsByFp = new Map();
   const sourceByFp = new Map();
 

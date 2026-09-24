@@ -38,19 +38,25 @@ function toast(text, isError) {
 
 // ---------- categories ----------
 
+// Jev chooses between the categories that are on, so at least two have to stay on.
+const enoughOn = (list) => list.filter((c) => c.enabled !== false).length >= 2;
+
 function categoryItem(cat, i) {
-  const li = el("li", "cat");
+  const off = cat.enabled === false;
+  const li = el("li", off ? "cat off" : "cat");
   const main = el("label", "cat-main");
   const check = el("input", "check");
   check.type = "checkbox";
   check.checked = !!cat.hide;
+  check.disabled = off;
   check.addEventListener("change", () => {
     cat.hide = check.checked;
     save();
   });
   const text = el("span");
   const name = el("span", "cat-name", cat.label);
-  if (cat.builtin) name.append(el("span", "tag", "built in"));
+  if (off) name.append(el("span", "tag", "off"));
+  else if (cat.builtin) name.append(el("span", "tag", "built in"));
   text.append(name, el("span", "cat-desc", cat.description));
   main.append(check, text);
   const edit = button("Edit", "link edit", () => {
@@ -82,17 +88,24 @@ function categoryForm(cat, isNew) {
     "p",
     "hint small muted",
     cat.builtin
-      ? "Built in: Jev puts things you keep here, so they aren't forced into a hidden category. Keep it narrow: anything it mentions can't be hidden by your own categories."
+      ? "Built in: Jev puts things you keep here, so they aren't forced into a hidden category. Keep it narrow: anything it mentions can't be hidden by your own categories. Turned off or deleted, its elements have to go to another category, possibly a hidden one."
       : "Describe it the way you'd explain it to a person.",
   );
+  const onField = el("label", "on-field");
+  const on = el("input", "check");
+  on.type = "checkbox";
+  on.checked = cat.enabled !== false;
+  onField.append(on, el("span", "", "Use this category"));
   const problem = el("p", "error small");
   problem.hidden = true;
 
   const actions = el("div", "form-actions");
-  if (!isNew && !cat.builtin) {
+  if (!isNew) {
     actions.append(
       button("Delete", "link danger", () => {
-        categories = categories.filter((c) => c !== cat);
+        const rest = categories.filter((c) => c !== cat);
+        if (!enoughOn(rest)) return toast("Keep at least two categories turned on.", true);
+        categories = rest;
         editing = null;
         renderCategories();
         save();
@@ -118,16 +131,25 @@ function categoryForm(cat, isNew) {
       (label ? description : name).focus();
       return;
     }
+    if (!on.checked && !enoughOn(categories.filter((c) => c !== cat))) {
+      problem.textContent = "Keep at least two categories turned on.";
+      problem.hidden = false;
+      return;
+    }
     if (isNew) {
       const id = slug(label, new Set(categories.map((c) => c.id)));
-      categories.push({ id, label, description: desc, hide: true });
-    } else Object.assign(cat, { label, description: desc });
+      categories.push({ id, label, description: desc, hide: true, ...(on.checked ? {} : { enabled: false }) });
+    } else {
+      Object.assign(cat, { label, description: desc });
+      if (on.checked) delete cat.enabled;
+      else cat.enabled = false;
+    }
     editing = null;
     renderCategories();
     save();
   });
 
-  form.append(nameField, descField, hint, problem, actions);
+  form.append(nameField, descField, hint, onField, problem, actions);
   li.append(form);
   requestAnimationFrame(() => name.focus({ preventScroll: !isNew }));
   return li;
@@ -214,8 +236,8 @@ async function save() {
   clearTimeout(saveTimer);
   saveTimer = null;
   const next = collect();
-  if (next.categories.length < 2) {
-    toast("Keep at least two categories.", true);
+  if (next.categories.filter((c) => c.enabled !== false).length < 2) {
+    toast("Keep at least two categories turned on.", true);
     return false;
   }
   await api.runtime.sendMessage({ type: "saveSettings", settings: next });

@@ -724,8 +724,9 @@
     const { settings, [key]: site } = await api.storage.local.get(["settings", key]);
     if (!settings?.categories) return send({ type: "init", host }); // defaults live in the worker
     if ((settings.pausedHosts ?? []).some((h) => host === h || host.endsWith("." + h))) return { active: false };
-    const version = hash(JSON.stringify(settings.categories.map((c) => [c.id, c.description])));
-    const hiddenLabels = new Set(settings.categories.filter((c) => c.hide).map((c) => c.id));
+    const inUse = settings.categories.filter((c) => c.enabled !== false); // as in background.js
+    const version = hash(JSON.stringify(inUse.map((c) => [c.id, c.description])));
+    const hiddenLabels = new Set(inUse.filter((c) => c.hide).map((c) => c.id));
     const rules = site?.v === version
       ? Object.entries(site.rules ?? {}).filter(([, r]) => r.hits >= RULE_MIN_HITS && hiddenLabels.has(r.label)).map(([sel]) => sel)
       : [];
