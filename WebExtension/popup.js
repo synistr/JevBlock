@@ -41,7 +41,7 @@ async function main() {
         const name = document.createElement("span");
         name.textContent = names[label] ?? label;
         const count = document.createElement("span");
-        count.className = "muted";
+        count.className = "muted mono";
         count.textContent = n;
         li.append(name, count);
         return li;
@@ -54,7 +54,7 @@ async function main() {
   else if (stats.error) {
     status.textContent = stats.error;
     status.className = "small error";
-  } else status.textContent = `Checked ${stats.asked} elements using ${stats.tokens.toLocaleString()} tokens.`;
+  } else setTextWithNumbers(status, `Checked ${stats.asked} elements using ${stats.tokens.toLocaleString()} tokens.`);
 }
 
 $("reveal").addEventListener("change", async (e) => {

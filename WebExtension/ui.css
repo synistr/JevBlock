@@ -1,33 +1,40 @@
 @font-face {
-  font-family: "Instrument Sans";
-  src: url("instrument-sans.woff2") format("woff2");
-  font-weight: 400 700;
-  font-stretch: 75% 100%;
+  font-family: "Geist";
+  src: url("geist.woff2") format("woff2");
+  font-weight: 100 900;
   font-display: swap;
 }
-/* Colors come from the app icon's teal. */
+@font-face {
+  font-family: "Geist Mono";
+  src: url("geist-mono.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+/* Jev pink (#C562B2). Pink fills carry near-black, as in the Jev logo (4.6:1); text-sized pink
+   uses --accent-text, a shade that keeps 4.5:1 on paper and surface. Neutrals are tinted to match. */
 :root {
   color-scheme: light dark;
-  --paper: #eef3f2;
+  --paper: #f7f1f5;
   --surface: #fff;
-  --ink: #142b2e;
-  --muted: #587072;
-  --line: #d3dedd;
-  --accent: #0e7c68;
-  --accent-ink: #fff;
-  --accent-soft: #dcefea;
+  --ink: #271722;
+  --muted: #6e5867;
+  --line: #e7d9e3;
+  --accent: #c562b2;
+  --accent-ink: #1d1d1f;
+  --accent-text: #a23c8e;
+  --accent-soft: #f5e1ef;
   --danger: #c43d2f;
+  --mono: "Geist Mono", ui-monospace, Menlo, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #0f1a1b;
-    --surface: #172425;
-    --ink: #e3eeec;
-    --muted: #8fa6a5;
-    --line: #2d3e3f;
-    --accent: #45c7a8;
-    --accent-ink: #062520;
-    --accent-soft: #183a34;
+    --paper: #171015;
+    --surface: #221820;
+    --ink: #f2e7ef;
+    --muted: #b39daf;
+    --line: #3c2d38;
+    --accent-text: #d88bc9;
+    --accent-soft: #3b2336;
     --danger: #ff7b6b;
   }
 }
@@ -35,7 +42,7 @@
 html { background: var(--paper); }
 body {
   margin: 0;
-  font: 16px/1.5 "Instrument Sans", system-ui, sans-serif;
+  font: 16px/1.5 "Geist", system-ui, sans-serif;
   color: var(--ink);
   background: var(--paper);
   -webkit-text-size-adjust: 100%;
@@ -45,6 +52,8 @@ h1, h2, p { margin: 0; }
 h1 { font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; }
 h2 { font-size: 21px; line-height: 1.25; font-weight: 600; letter-spacing: -0.01em; }
 .muted { color: var(--muted); }
+/* Mono for numbers, hostnames and technical values; slightly smaller to sit with Geist's x-height. */
+.mono { font-family: var(--mono); font-size: 0.94em; font-variant-numeric: tabular-nums; }
 .small { font-size: 14px; line-height: 1.45; }
 .error { color: var(--danger); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -62,7 +71,7 @@ button {
 }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 button.danger { color: var(--danger); }
-button.link { padding: 4px 0; border: 0; background: none; color: var(--accent); }
+button.link { padding: 4px 0; border: 0; background: none; color: var(--accent-text); }
 button.link.danger { color: var(--danger); }
 button:disabled { opacity: 0.45; cursor: default; }
 

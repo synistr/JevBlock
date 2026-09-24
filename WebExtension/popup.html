@@ -10,9 +10,9 @@
   header img { width: 36px; height: 36px; border-radius: 8px; }
   header div { min-width: 0; }
   h1 { font-size: 21px; }
-  #host { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+  #host { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 13px; }
   .summary { display: flex; align-items: baseline; gap: 10px; margin-top: 24px; }
-  #count { font-size: 44px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  #count { font-family: var(--mono); font-size: 44px; font-weight: 600; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
   #labels { list-style: none; margin: 14px 0 0; padding: 0; }
   #labels:empty { display: none; }
   #labels li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); }
@@ -50,6 +50,7 @@
     <button id="settings" type="button">Settings</button>
     <button class="danger" id="reset" type="button">Forget this site</button>
   </div>
+  <script src="ui.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -226,8 +226,10 @@ async function load() {
   const u = res.usage;
   if (u?.requests) {
     const cost = settings.model.endsWith("-free") ? "" : ` About $${((u.total / 1e6) * 0.042).toFixed(4)} at $0.042 per million.`;
-    $("usage").textContent =
-      `${u.today.toLocaleString()} tokens used today, ${u.total.toLocaleString()} in total over ${u.requests.toLocaleString()} requests.` + cost;
+    setTextWithNumbers(
+      $("usage"),
+      `${u.today.toLocaleString()} tokens used today, ${u.total.toLocaleString()} in total over ${u.requests.toLocaleString()} requests.` + cost,
+    );
   }
 }
 
@@ -273,7 +275,7 @@ $("test").addEventListener("click", async () => {
   const res = await api.runtime.sendMessage({ type: "test" });
   if (res.ok) {
     const label = categories.find((c) => c.id === res.verdict.label)?.label ?? res.verdict.label;
-    result.textContent = `Connected in ${res.ms} ms. A sample ad came back as “${label}”.`;
+    setTextWithNumbers(result, `Connected in ${res.ms} ms. A sample ad came back as “${label}”.`);
   } else result.textContent = res.error;
   result.className = res.ok ? "small muted" : "small error";
 });

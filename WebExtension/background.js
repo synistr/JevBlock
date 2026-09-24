@@ -354,7 +354,7 @@ async function handle(msg, sender) {
       if (tabId != null) {
         try {
           await api.action.setBadgeText({ tabId, text: msg.count ? String(msg.count) : "" });
-          await api.action.setBadgeBackgroundColor?.({ tabId, color: "#0a84ff" });
+          await api.action.setBadgeBackgroundColor?.({ tabId, color: "#c562b2" });
         } catch {
           /* badges are optional on iOS */
         }
