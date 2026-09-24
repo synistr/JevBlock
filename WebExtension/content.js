@@ -12,6 +12,7 @@
   const MAX_WALK = 12000; // nodes visited per segmentation pass
   const MAX_CHECKS = 3; // an element is asked about again when it changes, at most this often
   const RESCAN_MS = 1000;
+  const CHUNK = 30; // candidates per classify message: one Jev request each
   const MAX_SELECTOR_MATCHES = 3;
 
   const IAB_SIZES = [
@@ -71,7 +72,18 @@
     debug: false,
     scanMs: 0,
     maxScanMs: 0,
+    marks: {}, // debug: ms since navigation start for rules applied, first request, first hide
   };
+
+  function mark(name) {
+    if (!(name in state.marks)) state.marks[name] = Math.round(performance.now());
+  }
+
+  function debugOut() {
+    if (!state.debug) return;
+    const { scans, scanMs, maxScanMs, asked, tokens, marks } = state;
+    document.documentElement.setAttribute("data-jevblock-debug", JSON.stringify({ scans, scanMs, maxScanMs, asked, tokens, ...marks }));
+  }
   const checked = new WeakMap(); // element -> { fp, n }
   const hidden = new Map(); // element -> label
 
@@ -398,6 +410,12 @@
     return e;
   }
 
+  /** Cheap stand-in for a full description: when it hasn't changed, neither has the element. */
+  function quickSig(el, r) {
+    const frame = el.localName === "iframe" ? el : el.querySelector("iframe");
+    return `${Math.round(r.width / 40)}x${Math.round(r.height / 40)}|${el.childElementCount}|${frame?.src.slice(0, 80) ?? ""}|${(el.textContent ?? "").length >> 5}`;
+  }
+
   function fingerprint(e) {
     const [w, h] = e.size.split("x").map((n) => Math.round(Number(n) / 40));
     return hash(
@@ -428,6 +446,12 @@
     };
     if (el.id && !/\d{3,}/.test(el.id)) {
       const s = tryIt(`#${CSS.escape(el.id)}`);
+      if (s) return s;
+    }
+    // Generated ids like sp_message_container_1515335: the part before the number is stable.
+    const prefix = el.id.match(/^([a-z][\w-]*?[_-])\d{3,}$/i)?.[1];
+    if (prefix && prefix.length >= 6) {
+      const s = tryIt(`${tag}[id^="${CSS.escape(prefix)}"]`);
       if (s) return s;
     }
     const classes = [...el.classList].filter((c) => !/\d{3,}/.test(c) && c.length < 40);
@@ -492,6 +516,16 @@
     (document.head ?? document.documentElement).appendChild(style);
   }
 
+  function ruleHidesSomething() {
+    return state.rules.some((sel) => {
+      try {
+        return !!document.querySelector(sel);
+      } catch {
+        return false;
+      }
+    });
+  }
+
   function hiddenCount() {
     let n = hidden.size;
     for (const sel of state.rules) {
@@ -534,12 +568,18 @@
     }
     const out = [];
     for (const el of els) {
+      const r = el.getBoundingClientRect();
+      const sig = quickSig(el, r);
+      const prev = checked.get(el);
+      if (prev && (prev.sig === sig || prev.n >= MAX_CHECKS)) continue;
       if (neverAsk(el)) continue;
       const entry = describe(el, signalsOf(el, bySignal.get(el)));
       const fp = fingerprint(entry);
-      const prev = checked.get(el);
-      if (prev && (prev.fp === fp || prev.n >= MAX_CHECKS)) continue;
-      out.push({ el, entry, fp, top: el.getBoundingClientRect().top });
+      if (prev?.fp === fp) {
+        prev.sig = sig;
+        continue;
+      }
+      out.push({ el, entry, fp, sig, top: r.top });
     }
     // Nearest to what the reader sees first.
     out.sort((a, b) => Math.abs(a.top) - Math.abs(b.top));
@@ -556,19 +596,21 @@
         return;
       }
       state.sensitive = false;
+      mark("firstScan");
+      // A consent wall hidden by a learned rule leaves the page scroll-locked just like one hidden here.
+      if (!document.documentElement.hasAttribute("data-jevblock-unlock") && state.rules.length && isScrollLocked() && ruleHidesSomething()) {
+        document.documentElement.setAttribute("data-jevblock-unlock", "");
+      }
       const started = performance.now();
       const found = collect();
       state.scanMs = Math.round(performance.now() - started);
       state.maxScanMs = Math.max(state.maxScanMs, state.scanMs);
-      if (state.debug) {
-        const { scans, scanMs, maxScanMs, asked, tokens } = state;
-        document.documentElement.setAttribute("data-jevblock-debug", JSON.stringify({ scans, scanMs, maxScanMs, asked, tokens }));
-      }
+      debugOut();
       if (!found.length) return;
       const byFp = new Map();
       const candidates = [];
-      for (const { el, entry, fp } of found) {
-        checked.set(el, { fp, n: (checked.get(el)?.n ?? 0) + 1 });
+      for (const { el, entry, fp, sig } of found) {
+        checked.set(el, { fp, sig, n: (checked.get(el)?.n ?? 0) + 1 });
         if (!byFp.has(fp)) {
           byFp.set(fp, []);
           const sel = stableSelector(el);
@@ -578,28 +620,65 @@
       }
       state.asked += found.length;
       const page = { host, title: clean(document.title, 120), lang: document.documentElement.lang?.slice(0, 8) || undefined };
-      const res = await send({ type: "classify", host, page, candidates });
-      state.error = res?.error ?? null;
-      state.tokens += res?.tokens ?? 0;
-      for (const v of res?.verdicts ?? []) {
-        for (const el of byFp.get(v.fp) ?? []) {
-          if (v.hide) hide(el, v.label);
-          // Debug setting: tag every checked element with its verdict, for inspecting misses.
-          if (state.debug) el.setAttribute("data-jevblock-seen", `${v.label} ${v.p}`);
+      const apply = (verdicts) => {
+        for (const v of verdicts ?? []) {
+          for (const el of byFp.get(v.fp) ?? []) {
+            if (v.hide) hide(el, v.label);
+            // Debug setting: tag every checked element with its verdict, for inspecting misses.
+            if (state.debug) el.setAttribute("data-jevblock-seen", `${v.label} ${v.p}`);
+          }
         }
-      }
-      send({ type: "badge", count: hiddenCount() });
+        if (hidden.size) mark("firstHide");
+        debugOut();
+      };
+      mark("firstRequest");
+      // Remembered verdicts come back without waiting for Jev.
+      const known = await send({ type: "classify", host, page, candidates, cachedOnly: true });
+      apply(known?.verdicts);
+      const missing = new Set(known?.misses ?? candidates.map((c) => c.fp));
+      const misses = candidates.filter((c) => missing.has(c.fp));
+      // The rest in Jev-sized chunks, nearest to the viewport first, each hidden as soon as it's back
+      // instead of waiting for the slowest one.
+      const chunks = [];
+      for (let i = 0; i < misses.length; i += CHUNK) chunks.push(misses.slice(i, i + CHUNK));
+      // Not awaited: the next scan can start while Jev is still answering (elements are already
+      // marked as checked, so nothing is asked twice).
+      state.error = null;
+      Promise.all(
+        chunks.map(async (chunk) => {
+          const res = await send({ type: "classify", host, page, candidates: chunk });
+          if (res?.error) state.error = res.error;
+          state.tokens += res?.tokens ?? 0;
+          apply(res?.verdicts);
+        }),
+      ).then(() => send({ type: "badge", count: hiddenCount() }));
     } finally {
       scanning = false;
     }
   }
 
+  /** Added nodes that look like an overlay or ad (consent walls, popups, ad frames) get a quick rescan. */
+  function looksUrgent(node) {
+    if (node.localName === "iframe") return true;
+    const t = tokensOf(node);
+    return OVERLAY_TOKEN_RE.test(t) || STRONG_TOKEN_RE.test(t) || isFixed(node);
+  }
+
   function start() {
-    scheduleScan(150);
+    scheduleScan(0);
     addEventListener("load", () => scheduleScan(400), { once: true });
     addEventListener("scroll", () => scheduleScan(500), { passive: true });
     new MutationObserver((records) => {
-      if (records.some((r) => r.addedNodes.length)) scheduleScan();
+      let added = 0;
+      let urgent = false;
+      for (const r of records) {
+        for (const n of r.addedNodes) {
+          if (n.nodeType !== Node.ELEMENT_NODE) continue;
+          if (!urgent && ++added <= 40) urgent = looksUrgent(n);
+          else added++;
+        }
+      }
+      if (added) scheduleScan(urgent ? 100 : RESCAN_MS);
     }).observe(document.documentElement, { childList: true, subtree: true });
   }
 
@@ -636,23 +715,44 @@
     return false;
   });
 
-  send({ type: "init", host }).then((res) => {
-    if (res?.error) {
-      state.error = res.error;
-      return;
-    }
-    if (!res?.active) {
-      state.paused = true;
-      return;
-    }
-    state.active = true;
-    state.debug = !!res.debug;
-    state.extra = (res.extraSelectors ?? "")
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    applyRules(res.rules ?? []);
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
-    else start();
-  });
+  // Paused state and learned rules are read straight from storage: no waiting for the background
+  // worker, which may be starting cold. It is woken in parallel so it can open the connection to Jev.
+  const RULE_MIN_HITS = 2; // same as background.js
+
+  async function initFromStorage() {
+    const key = "site:" + host;
+    const { settings, [key]: site } = await api.storage.local.get(["settings", key]);
+    if (!settings?.categories) return send({ type: "init", host }); // defaults live in the worker
+    if ((settings.pausedHosts ?? []).some((h) => host === h || host.endsWith("." + h))) return { active: false };
+    const version = hash(JSON.stringify(settings.categories.map((c) => [c.id, c.description])));
+    const hiddenLabels = new Set(settings.categories.filter((c) => c.hide).map((c) => c.id));
+    const rules = site?.v === version
+      ? Object.entries(site.rules ?? {}).filter(([, r]) => r.hits >= RULE_MIN_HITS && hiddenLabels.has(r.label)).map(([sel]) => sel)
+      : [];
+    return { active: true, rules, extraSelectors: settings.extraSelectors ?? "", debug: !!settings.debug };
+  }
+
+  send({ type: "warm" });
+  initFromStorage()
+    .catch(() => send({ type: "init", host }))
+    .then((res) => {
+      if (res?.error) {
+        state.error = res.error;
+        return;
+      }
+      if (!res?.active) {
+        state.paused = true;
+        return;
+      }
+      state.active = true;
+      state.debug = !!res.debug;
+      state.extra = (res.extraSelectors ?? "")
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      applyRules(res.rules ?? []);
+      mark("rules");
+      if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
+      else start();
+    });
 })();

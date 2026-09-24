@@ -5,23 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="ui.css">
 <style>
-  body { min-width: 300px; padding: 20px; }
-  header { display: flex; align-items: center; gap: 12px; }
-  header img { width: 36px; height: 36px; border-radius: 8px; }
+  body { min-width: 300px; padding: 16px; }
+  header { display: flex; align-items: center; gap: 10px; }
+  header img { width: 32px; height: 32px; border-radius: 7px; }
   header div { min-width: 0; }
-  h1 { font-size: 21px; }
-  #host { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 13px; }
-  .summary { display: flex; align-items: baseline; gap: 10px; margin-top: 24px; }
-  #count { font-family: var(--mono); font-size: 44px; font-weight: 600; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
-  #labels { list-style: none; margin: 14px 0 0; padding: 0; }
+  #host { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
+  .summary { display: flex; align-items: baseline; gap: 8px; margin-top: 18px; }
+  #count { font-family: var(--mono); font-size: 34px; font-weight: 600; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
+  #labels { list-style: none; margin: 10px 0 0; padding: 0; font-size: 14px; }
   #labels:empty { display: none; }
-  #labels li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); }
-  #status { margin-top: 12px; }
+  #labels li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); }
+  #status { margin-top: 10px; }
   #status:empty { display: none; }
-  .options { margin-top: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
-  .options label { display: flex; align-items: center; gap: 12px; padding: 13px 16px; cursor: pointer; }
+  .options { margin-top: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 11px; }
+  .options label { display: flex; align-items: center; gap: 11px; padding: 11px 13px; cursor: pointer; }
   .options label + label { border-top: 1px solid var(--line); }
-  .buttons { display: flex; gap: 8px; margin-top: 16px; }
+  .buttons { display: flex; gap: 8px; margin-top: 12px; }
   .buttons button { flex: 1; }
 </style>
 </head>

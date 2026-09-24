@@ -205,7 +205,18 @@ function buildRequest(settings, page, entries) {
   };
 }
 
+let lastJevAt = 0;
+
+/** Opens the connection to Jev while the page is still loading, so the first real request skips the handshake. */
+async function preconnect() {
+  if (Date.now() - lastJevAt < 60_000) return;
+  lastJevAt = Date.now();
+  const { endpoint } = await getSettings();
+  fetch(endpoint, { method: "HEAD", cache: "no-store" }).catch(() => {});
+}
+
 async function callJev(settings, body, attempt = 0) {
+  lastJevAt = Date.now();
   const headers = { "Content-Type": "application/json", Accept: "application/json" };
   if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
   const ctrl = new AbortController();
@@ -255,9 +266,10 @@ async function init(host) {
 
 /**
  * candidates: [{ fp, sel?, entry }]. Cached fingerprints are decided locally; the rest go to Jev
- * in batches. Returns one verdict per candidate that could be decided.
+ * in batches. Returns one verdict per candidate that could be decided. With cachedOnly, Jev is
+ * not asked and the fingerprints it would have been asked about come back as `misses`.
  */
-async function classify(host, page, candidates) {
+async function classify(host, page, candidates, cachedOnly = false) {
   const settings = await getSettings();
   if (hostPaused(host, settings)) return { verdicts: [] };
   const version = categoriesVersion(settings.categories);
@@ -279,7 +291,7 @@ async function classify(host, page, candidates) {
   let error;
   let tokens = 0;
   const batches = [];
-  for (let i = 0; i < misses.length; i += BATCH) batches.push(misses.slice(i, i + BATCH));
+  if (!cachedOnly) for (let i = 0; i < misses.length; i += BATCH) batches.push(misses.slice(i, i + BATCH));
   await pool(
     batches.map((batch) => async () => {
       if (error) return;
@@ -320,7 +332,7 @@ async function classify(host, page, candidates) {
     }
     await putSite(host, fresh);
   });
-  return { verdicts, error, tokens };
+  return cachedOnly ? { verdicts, misses: misses.map((c) => c.fp) } : { verdicts, error, tokens };
 }
 
 async function testConnection() {
@@ -348,7 +360,10 @@ async function handle(msg, sender) {
     case "init":
       return init(msg.host);
     case "classify":
-      return classify(msg.host, msg.page, msg.candidates);
+      return classify(msg.host, msg.page, msg.candidates, !!msg.cachedOnly);
+    case "warm":
+      await preconnect();
+      return {};
     case "badge": {
       const tabId = sender?.tab?.id;
       if (tabId != null) {

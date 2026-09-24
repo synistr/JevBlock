@@ -74,7 +74,7 @@ function categoryForm(cat, isNew) {
   nameField.append(el("span", "", "Name"), name);
   const descField = el("label", "field");
   const description = el("textarea");
-  description.rows = 3;
+  description.rows = 6;
   description.value = cat.description;
   description.placeholder = "Long personal stories that come before the actual recipe";
   descField.append(el("span", "", "What belongs in it"), description);
@@ -214,7 +214,7 @@ async function save() {
   }
   await api.runtime.sendMessage({ type: "saveSettings", settings: next });
   settings = next;
-  toast("Saved");
+  toast("Saved. Reload pages to apply.");
   return true;
 }
 
@@ -267,7 +267,7 @@ $("add").addEventListener("click", () => {
 $("test").addEventListener("click", async () => {
   const result = $("testResult");
   result.textContent = "Testing…";
-  result.className = "small muted";
+  result.className = "muted";
   if (!(await save())) {
     result.textContent = "";
     return;
@@ -277,7 +277,7 @@ $("test").addEventListener("click", async () => {
     const label = categories.find((c) => c.id === res.verdict.label)?.label ?? res.verdict.label;
     setTextWithNumbers(result, `Connected in ${res.ms} ms. A sample ad came back as “${label}”.`);
   } else result.textContent = res.error;
-  result.className = res.ok ? "small muted" : "small error";
+  result.className = res.ok ? "muted" : "error";
 });
 
 confirmTap($("clearAll"), "Tap again to forget all sites", async () => {
@@ -290,6 +290,31 @@ confirmTap($("resetCategories"), "Tap again to restore", async () => {
   await save();
   toast("Default categories restored");
 });
+
+// ---------- menu ----------
+
+const tabs = [...document.querySelectorAll('[role="tab"]')];
+
+function showTab(tab, focus) {
+  for (const t of tabs) {
+    const selected = t === tab;
+    t.setAttribute("aria-selected", selected);
+    t.tabIndex = selected ? 0 : -1;
+    $(t.getAttribute("aria-controls")).hidden = !selected;
+  }
+  history.replaceState(null, "", "#" + tab.id.replace("tab-", ""));
+  scrollTo(0, 0);
+  if (focus) tab.focus();
+}
+
+for (const tab of tabs) {
+  tab.addEventListener("click", () => showTab(tab));
+  tab.addEventListener("keydown", (e) => {
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (step) showTab(tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length], true);
+  });
+}
+showTab($("tab-" + location.hash.slice(1)) ?? tabs[0]);
 
 // Typing saves after a pause; don't lose the last keystrokes when the tab goes away.
 addEventListener("pagehide", () => saveTimer && save());

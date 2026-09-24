@@ -21,6 +21,7 @@
   --line: #e7d9e3;
   --accent: #c562b2;
   --accent-ink: #1d1d1f;
+  --check-ink: #fff; /* checkmark on pink: white reads cleaner in light mode, near-black in dark */
   --accent-text: #a23c8e;
   --accent-soft: #f5e1ef;
   --danger: #c43d2f;
@@ -33,6 +34,7 @@
     --ink: #f2e7ef;
     --muted: #b39daf;
     --line: #3c2d38;
+    --check-ink: #1d1d1f;
     --accent-text: #d88bc9;
     --accent-soft: #3b2336;
     --danger: #ff7b6b;
@@ -42,19 +44,19 @@
 html { background: var(--paper); }
 body {
   margin: 0;
-  font: 16px/1.5 "Geist", system-ui, sans-serif;
+  font: 15px/1.45 "Geist", system-ui, sans-serif;
   color: var(--ink);
   background: var(--paper);
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
 }
 h1, h2, p { margin: 0; }
-h1 { font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; }
-h2 { font-size: 21px; line-height: 1.25; font-weight: 600; letter-spacing: -0.01em; }
+h1 { font-size: 17px; line-height: 1.25; font-weight: 600; letter-spacing: -0.015em; }
+h2 { font-size: 16px; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; }
 .muted { color: var(--muted); }
 /* Mono for numbers, hostnames and technical values; slightly smaller to sit with Geist's x-height. */
 .mono { font-family: var(--mono); font-size: 0.94em; font-variant-numeric: tabular-nums; }
-.small { font-size: 14px; line-height: 1.45; }
+.small { font-size: 13px; line-height: 1.4; }
 .error { color: var(--danger); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -62,7 +64,7 @@ button {
   font: inherit;
   font-weight: 600;
   line-height: 1.25;
-  padding: 10px 16px;
+  padding: 9px 14px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
@@ -71,12 +73,15 @@ button {
 }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 button.danger { color: var(--danger); }
-button.link { padding: 4px 0; border: 0; background: none; color: var(--accent-text); }
+button.link { padding: 3px 0; border: 0; background: none; color: var(--accent-text); }
 button.link.danger { color: var(--danger); }
 button:disabled { opacity: 0.45; cursor: default; }
 
+/* Inputs stay at 16px: smaller text makes iOS Safari zoom in on focus. */
 input[type="text"], input[type="url"], input[type="password"], textarea {
   font: inherit;
+  font-size: 16px;
+  line-height: 1.5;
   width: 100%;
   margin: 0;
   padding: 10px 12px;
@@ -91,8 +96,8 @@ textarea { display: block; resize: vertical; line-height: 1.45; }
 
 /* Label above its input. */
 .field { display: block; }
-.field > span { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
-.field + .field { margin-top: 14px; }
+.field > span { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+.field + .field { margin-top: 12px; }
 
 /* Checkbox */
 input[type="checkbox"].check {
@@ -101,20 +106,20 @@ input[type="checkbox"].check {
   flex: none;
   display: grid;
   place-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   margin: 0;
   border: 2px solid var(--muted);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--surface);
   cursor: pointer;
 }
 input[type="checkbox"].check::after {
   content: "";
-  width: 11px;
-  height: 6px;
+  width: 10px;
+  height: 5.5px;
   margin-top: -3px;
-  border: solid var(--accent-ink);
+  border: solid var(--check-ink);
   border-width: 0 0 2.5px 2.5px;
   transform: rotate(-45deg);
   opacity: 0;
