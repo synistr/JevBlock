@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JevBlock",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Hides page elements that Jev classifies into categories you choose.",
   "permissions": ["storage"],
   "host_permissions": ["<all_urls>"],

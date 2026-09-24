@@ -3,7 +3,9 @@ const $ = (id) => document.getElementById(id);
 
 let settings;
 let defaults;
+let categories = [];
 let pausedHosts = [];
+let editing = null; // index into categories, or "new"
 
 function slug(name, taken) {
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 24) || "category";
@@ -19,124 +21,136 @@ function el(tag, className, text) {
   return node;
 }
 
+function button(text, className, onClick, type = "button") {
+  const b = el("button", className, text);
+  b.type = type;
+  if (onClick) b.addEventListener("click", onClick);
+  return b;
+}
+
 function toast(text, isError) {
   const t = $("toast");
   t.textContent = text;
   t.className = isError ? "show error" : "show";
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => (t.className = ""), 2500);
-}
-
-function fitHeight(textarea) {
-  textarea.style.height = "auto";
-  textarea.style.height = textarea.scrollHeight + "px";
+  toast.timer = setTimeout(() => t.classList.remove("show"), 2000);
 }
 
 // ---------- categories ----------
 
-function categoryRow(cat) {
-  const row = el("div", "cat");
-  // New categories get their id from the name when saved; Jev sees the id as the label.
-  row.dataset.id = cat.id ?? "";
-  row.dataset.builtin = cat.builtin ? "1" : "";
-
-  const open = el("button", "cat-open");
-  open.type = "button";
-  const nameText = el("span", "cat-name", cat.label);
-  const descText = el("span", "cat-desc", cat.description);
-  open.append(nameText, descText);
-  const hide = el("input", "switch hide");
-  hide.type = "checkbox";
-  hide.checked = !!cat.hide;
-  hide.setAttribute("aria-label", `Hide ${cat.label || "this category"}`);
-  hide.addEventListener("change", scheduleSave);
-  const head = el("div", "cat-head");
-  head.append(open, hide);
-
-  const name = el("input", "name");
-  name.type = "text";
-  name.value = cat.label;
-  name.placeholder = "Name";
-  name.addEventListener("input", () => {
-    nameText.textContent = name.value;
-    hide.setAttribute("aria-label", `Hide ${name.value || "this category"}`);
-    scheduleSave();
+function categoryItem(cat, i) {
+  const li = el("li", "cat");
+  const main = el("label", "cat-main");
+  const check = el("input", "check");
+  check.type = "checkbox";
+  check.checked = !!cat.hide;
+  check.addEventListener("change", () => {
+    cat.hide = check.checked;
+    save();
   });
-  const description = el("textarea", "description");
-  description.value = cat.description;
-  description.rows = 2;
-  description.placeholder = "What belongs in this category?";
-  description.addEventListener("input", () => {
-    descText.textContent = description.value;
-    fitHeight(description);
-    scheduleSave();
+  const text = el("span");
+  const name = el("span", "cat-name", cat.label);
+  if (cat.builtin) name.append(el("span", "tag", "built in"));
+  text.append(name, el("span", "cat-desc", cat.description));
+  main.append(check, text);
+  const edit = button("Edit", "link edit", () => {
+    editing = i;
+    renderCategories();
   });
-  const fields = el("div", "cat-fields");
-  fields.append(name, description);
-
-  const actions = el("div", "cat-actions");
-  if (cat.builtin) actions.append(el("span", "small muted", "Built in: helps Jev tell things apart"));
-  else {
-    const remove = el("button", "danger", "Delete");
-    remove.type = "button";
-    remove.addEventListener("click", () => {
-      row.remove();
-      save();
-    });
-    actions.append(remove);
-  }
-  const done = el("button", "done", "Done");
-  done.type = "button";
-  done.addEventListener("click", () => setOpen(row, false));
-  actions.append(done);
-
-  const edit = el("div", "cat-edit");
-  edit.append(fields, actions);
-  row.append(head, edit);
-  open.addEventListener("click", () => setOpen(row, !row.classList.contains("open")));
-  return row;
+  edit.disabled = editing !== null;
+  edit.setAttribute("aria-label", `Edit ${cat.label}`);
+  li.append(main, edit);
+  return li;
 }
 
-/** Opens one category's editor at a time; closing drops an untouched new one and insists on both fields otherwise. */
-function setOpen(row, on) {
-  if (!on) {
-    const name = row.querySelector(".name");
-    const description = row.querySelector(".description");
-    if (!name.value.trim() && !description.value.trim() && !row.dataset.id) {
-      row.remove();
-      return true;
-    }
-    const empty = [name, description].find((f) => !f.value.trim());
-    if (empty) {
-      empty.focus();
-      return false;
-    }
-    row.classList.remove("open");
-    return true;
+function categoryForm(cat, isNew) {
+  const li = el("li", "cat");
+  const form = el("form");
+  const nameField = el("label", "field");
+  const name = el("input");
+  name.type = "text";
+  name.value = cat.label;
+  name.placeholder = "Recipe life stories";
+  nameField.append(el("span", "", "Name"), name);
+  const descField = el("label", "field");
+  const description = el("textarea");
+  description.rows = 3;
+  description.value = cat.description;
+  description.placeholder = "Long personal stories that come before the actual recipe";
+  descField.append(el("span", "", "What belongs in it"), description);
+  const hint = el("p", "hint small muted", "Describe it the way you'd explain it to a person.");
+  const problem = el("p", "error small");
+  problem.hidden = true;
+
+  const actions = el("div", "form-actions");
+  if (!isNew && !cat.builtin) {
+    actions.append(
+      button("Delete", "link danger", () => {
+        categories = categories.filter((c) => c !== cat);
+        editing = null;
+        renderCategories();
+        save();
+      }),
+    );
   }
-  for (const other of document.querySelectorAll(".cat.open")) if (!setOpen(other, false)) return false;
-  row.classList.add("open");
-  fitHeight(row.querySelector(".description"));
-  return true;
+  actions.append(
+    button("Cancel", "", () => {
+      editing = null;
+      renderCategories();
+    }),
+    button("Save", "primary", null, "submit"),
+  );
+  if (!actions.querySelector(".danger")) actions.firstChild.style.marginLeft = "auto";
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const label = name.value.trim();
+    const desc = description.value.trim();
+    if (!label || !desc) {
+      problem.textContent = "Give the category a name and a description.";
+      problem.hidden = false;
+      (label ? description : name).focus();
+      return;
+    }
+    if (isNew) {
+      const id = slug(label, new Set(categories.map((c) => c.id)));
+      categories.push({ id, label, description: desc, hide: true });
+    } else Object.assign(cat, { label, description: desc });
+    editing = null;
+    renderCategories();
+    save();
+  });
+
+  form.append(nameField, descField, hint, problem, actions);
+  li.append(form);
+  requestAnimationFrame(() => name.focus({ preventScroll: !isNew }));
+  return li;
+}
+
+function renderCategories() {
+  const items = categories.map((cat, i) => (editing === i ? categoryForm(cat, false) : categoryItem(cat, i)));
+  if (editing === "new") items.push(categoryForm({ label: "", description: "" }, true));
+  $("categories").replaceChildren(...items);
+  $("add").hidden = editing === "new";
+  $("add").disabled = editing !== null;
 }
 
 // ---------- paused sites ----------
 
-function renderPaused() {
-  const rows = pausedHosts.map((host) => {
-    const row = el("div", "host");
-    const remove = el("button", "remove");
-    remove.type = "button";
-    remove.setAttribute("aria-label", `Resume ${host}`);
-    remove.addEventListener("click", () => {
-      pausedHosts = pausedHosts.filter((h) => h !== host);
-      renderPaused();
-      save();
-    });
-    row.append(el("span", "", host), remove);
-    return row;
-  });
-  $("paused").replaceChildren(...rows, $("addHost"));
+function renderHosts() {
+  $("hosts").replaceChildren(
+    ...pausedHosts.map((host) => {
+      const li = el("li");
+      const remove = button("×", "", () => {
+        pausedHosts = pausedHosts.filter((h) => h !== host);
+        renderHosts();
+        save();
+      });
+      remove.setAttribute("aria-label", `Resume ${host}`);
+      li.append(el("span", "", host), remove);
+      return li;
+    }),
+  );
 }
 
 $("addHost").addEventListener("submit", (e) => {
@@ -145,7 +159,7 @@ $("addHost").addEventListener("submit", (e) => {
   $("newHost").value = "";
   if (!host || pausedHosts.includes(host)) return;
   pausedHosts = [...pausedHosts, host];
-  renderPaused();
+  renderHosts();
   save();
 });
 
@@ -153,40 +167,28 @@ $("addHost").addEventListener("submit", (e) => {
 
 function showThreshold() {
   const input = $("threshold");
-  $("thresholdValue").textContent = Math.round(input.value * 100) + "% sure";
+  $("thresholdValue").textContent = Math.round(input.value * 100) + "%";
   input.style.setProperty("--pct", ((input.value - input.min) / (input.max - input.min)) * 100 + "%");
 }
 
 function render() {
-  $("categories").replaceChildren(...settings.categories.map(categoryRow), $("add"));
+  categories = structuredClone(settings.categories);
+  editing = null;
+  renderCategories();
+  pausedHosts = [...settings.pausedHosts];
+  renderHosts();
   $("threshold").value = settings.threshold;
   showThreshold();
   $("extraSelectors").value = settings.extraSelectors;
-  pausedHosts = [...settings.pausedHosts];
-  renderPaused();
   $("endpoint").value = settings.endpoint;
   $("model").value = settings.model;
   $("apiKey").value = settings.apiKey;
 }
 
 function collect() {
-  const rows = [...document.querySelectorAll(".cat")];
-  const taken = new Set(rows.map((r) => r.dataset.id).filter(Boolean));
-  const categories = rows
-    .map((row) => {
-      const label = row.querySelector(".name").value.trim();
-      const description = row.querySelector(".description").value.trim();
-      if (!label || !description) return null;
-      const id = row.dataset.id || slug(label, taken);
-      taken.add(id);
-      const cat = { id, label, description, hide: row.querySelector(".hide").checked };
-      if (row.dataset.builtin) cat.builtin = true;
-      return cat;
-    })
-    .filter(Boolean);
   return {
     ...settings,
-    categories,
+    categories: structuredClone(categories),
     threshold: Number($("threshold").value),
     extraSelectors: $("extraSelectors").value.trim(),
     pausedHosts,
@@ -196,10 +198,10 @@ function collect() {
   };
 }
 
-let saveTimer;
+let saveTimer = null;
 function scheduleSave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(save, 400);
+  saveTimer = setTimeout(save, 500);
 }
 
 async function save() {
@@ -212,6 +214,7 @@ async function save() {
   }
   await api.runtime.sendMessage({ type: "saveSettings", settings: next });
   settings = next;
+  toast("Saved");
   return true;
 }
 
@@ -221,32 +224,29 @@ async function load() {
   defaults = res.defaults;
   render();
   const u = res.usage;
-  if (u) {
-    $("usageToday").textContent = `${u.today.toLocaleString()} tokens`;
-    $("usageTotal").textContent = `${u.total.toLocaleString()} tokens`;
-    $("usageRequests").textContent = u.requests.toLocaleString();
-    if (!settings.model.endsWith("-free")) $("usageCost").textContent = `About $${((u.total / 1e6) * 0.042).toFixed(4)} at $0.042/M tokens.`;
+  if (u?.requests) {
+    const cost = settings.model.endsWith("-free") ? "" : ` About $${((u.total / 1e6) * 0.042).toFixed(4)} at $0.042 per million.`;
+    $("usage").textContent =
+      `${u.today.toLocaleString()} tokens used today, ${u.total.toLocaleString()} in total over ${u.requests.toLocaleString()} requests.` + cost;
   }
 }
 
 /** Destructive buttons ask for a second tap instead of a dialog. */
-function confirmTap(button, prompt, action) {
-  const label = button.textContent;
-  let armed = false;
-  let timer;
-  button.addEventListener("click", async () => {
-    if (!armed) {
-      armed = true;
-      button.textContent = prompt;
+function confirmTap(b, prompt, action) {
+  const label = b.textContent;
+  let timer = null;
+  b.addEventListener("click", async () => {
+    if (!timer) {
+      b.textContent = prompt;
       timer = setTimeout(() => {
-        armed = false;
-        button.textContent = label;
+        timer = null;
+        b.textContent = label;
       }, 4000);
       return;
     }
     clearTimeout(timer);
-    armed = false;
-    button.textContent = label;
+    timer = null;
+    b.textContent = label;
     await action();
   });
 }
@@ -256,44 +256,40 @@ $("threshold").addEventListener("input", () => {
   scheduleSave();
 });
 for (const id of ["extraSelectors", "endpoint", "model", "apiKey"]) $(id).addEventListener("input", scheduleSave);
-$("extraSelectors").addEventListener("input", (e) => fitHeight(e.target));
-$("advanced").addEventListener("toggle", () => fitHeight($("extraSelectors")));
 
 $("add").addEventListener("click", () => {
-  const row = categoryRow({ label: "", description: "", hide: true });
-  $("categories").insertBefore(row, $("add"));
-  if (setOpen(row, true)) row.querySelector(".name").focus();
-  else row.remove();
+  editing = "new";
+  renderCategories();
 });
 
 $("test").addEventListener("click", async () => {
   const result = $("testResult");
   result.textContent = "Testing…";
-  result.className = "foot";
+  result.className = "small muted";
   if (!(await save())) {
     result.textContent = "";
     return;
   }
   const res = await api.runtime.sendMessage({ type: "test" });
-  const label = res.ok && (settings.categories.find((c) => c.id === res.verdict.label)?.label ?? res.verdict.label);
-  result.textContent = res.ok
-    ? `Connected in ${res.ms} ms. A sample ad came back as “${label}”, ${Math.round(res.verdict.p * 100)}% hide.`
-    : res.error;
-  result.className = res.ok ? "foot" : "foot error";
+  if (res.ok) {
+    const label = categories.find((c) => c.id === res.verdict.label)?.label ?? res.verdict.label;
+    result.textContent = `Connected in ${res.ms} ms. A sample ad came back as “${label}”.`;
+  } else result.textContent = res.error;
+  result.className = res.ok ? "small muted" : "small error";
 });
 
 confirmTap($("clearAll"), "Tap again to forget all sites", async () => {
   await api.runtime.sendMessage({ type: "clearAll" });
-  toast("All sites forgotten.");
+  toast("All sites forgotten");
 });
 confirmTap($("resetCategories"), "Tap again to restore", async () => {
-  settings = { ...collect(), categories: structuredClone(defaults.categories) };
+  settings = { ...collect(), categories: defaults.categories };
   render();
   await save();
-  toast("Default categories restored.");
+  toast("Default categories restored");
 });
 
-// Saving is debounced; don't lose the last keystrokes when the tab goes away.
+// Typing saves after a pause; don't lose the last keystrokes when the tab goes away.
 addEventListener("pagehide", () => saveTimer && save());
 document.addEventListener("visibilitychange", () => document.hidden && saveTimer && save());
 

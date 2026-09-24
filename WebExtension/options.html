@@ -6,136 +6,138 @@
 <title>JevBlock settings</title>
 <link rel="stylesheet" href="ui.css">
 <style>
-  body { max-width: 40rem; margin: 0 auto; padding: 20px 16px calc(48px + env(safe-area-inset-bottom)); }
-  header { padding: 0 4px; }
-  header p { margin: 4px 0 0; font-size: 15px; }
+  body { max-width: 36rem; margin: 0 auto; padding: 28px 20px calc(64px + env(safe-area-inset-bottom)); }
+  header { display: flex; align-items: center; gap: 14px; }
+  header img { width: 48px; height: 48px; border-radius: 11px; }
+  header p { font-size: 14px; }
+  section { margin-top: 40px; }
+  section > h2 + p { margin-top: 4px; }
+  section > p + * { margin-top: 16px; }
 
-  .cat-head { display: flex; align-items: center; gap: 12px; padding-right: 16px; }
-  .cat-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 11px 0 11px 16px; text-align: left; color: var(--fg); }
-  .cat-name::after {
-    content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 0 3px 8px;
-    border: solid var(--faint); border-width: 0 2px 2px 0; transform: rotate(-45deg); transition: transform 0.2s;
-  }
-  .cat.open .cat-name::after { transform: rotate(45deg); margin-bottom: 4px; }
-  .cat-name:empty::before { content: "New category"; color: var(--faint); }
+  .cats { list-style: none; margin: 16px 0 0; padding: 0; }
+  .cat { display: flex; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  .cat + .cat { margin-top: 8px; }
+  .cat:has(.check:checked) { border-color: var(--accent); }
+  .cat-main { flex: 1; min-width: 0; display: flex; gap: 14px; padding: 14px 0 14px 16px; cursor: pointer; }
+  .cat-main .check { margin-top: 1px; }
+  .cat-name { display: block; font-weight: 600; }
+  .cat-name .tag { margin-left: 6px; font-size: 13px; font-weight: 400; color: var(--muted); }
   .cat-desc {
-    font-size: 15px; color: var(--muted);
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    margin-top: 2px; font-size: 14px; line-height: 1.45; color: var(--muted);
   }
-  .cat.open .cat-desc { display: none; }
-  .cat-edit { display: none; padding: 0 16px 12px; }
-  .cat.open .cat-edit { display: block; }
-  .cat-fields { background: var(--fill); border-radius: 10px; }
-  .cat-fields .name, .cat-fields .description { padding: 10px 12px; }
-  .cat-fields .name { font-weight: 600; }
-  .cat-fields .description { border-top: 0.5px solid var(--line); min-height: 4.5em; line-height: 1.35; }
-  .cat-actions { display: flex; justify-content: space-between; align-items: center; padding-top: 12px; }
-  .cat-actions .done { font-weight: 600; }
+  .cat .edit { padding: 14px 16px; font-size: 15px; }
+  .cat form { flex: 1; padding: 16px; }
+  .cat form .hint { margin-top: 6px; }
+  .cat form .error { margin-top: 10px; }
+  .form-actions { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+  .form-actions .danger { margin-right: auto; }
+  #add { margin-top: 12px; }
 
-  .slider { display: block; padding: 12px 16px 10px; }
-  .slider-top { display: flex; justify-content: space-between; margin-bottom: 6px; }
-  .slider-ends { display: flex; justify-content: space-between; margin-top: 4px; }
+  .slider { display: flex; align-items: center; gap: 16px; }
+  .slider input { flex: 1; }
+  #thresholdValue { min-width: 3.2em; text-align: right; font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .slider-ends { display: flex; justify-content: space-between; margin-right: calc(3.2em * 21 / 14 + 16px); }
 
-  .host { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 10px 16px; }
-  .host span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .remove { width: 24px; height: 24px; flex: none; border-radius: 50%; background: var(--fill); position: relative; }
-  .remove::before, .remove::after {
-    content: ""; position: absolute; left: 50%; top: 50%; width: 10px; height: 1.5px; border-radius: 1px;
-    background: var(--muted); transform: translate(-50%, -50%) rotate(45deg);
+  #addHost { display: flex; gap: 8px; }
+  #addHost input { flex: 1; }
+  .hosts { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 12px 0 0; padding: 0; }
+  .hosts:empty { display: none; }
+  .hosts li { display: flex; align-items: center; gap: 2px; padding-left: 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+  .hosts button { width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 20px; font-weight: 400; line-height: 1; }
+
+  details { margin-top: 40px; }
+  summary { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--accent); cursor: pointer; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before {
+    content: ""; width: 7px; height: 7px; border: solid currentColor; border-width: 0 2px 2px 0;
+    transform: rotate(-45deg); transition: transform 0.15s;
   }
-  .remove::after { transform: translate(-50%, -50%) rotate(-45deg); }
-  #addHost button { font-weight: 600; }
+  details[open] summary::before { transform: rotate(45deg); }
+  details section { margin-top: 28px; }
+  #extraSelectors { font-family: ui-monospace, Menlo, monospace; font-size: 15px; }
+  .test { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
 
-  #extraSelectors { font: 16px/1.4 ui-monospace, Menlo, monospace; min-height: 4.5em; }
-  .value { display: flex; justify-content: space-between; gap: 12px; }
-  .value span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
-
-  details summary { list-style: none; display: flex; justify-content: space-between; align-items: center; }
-  details summary::-webkit-details-marker { display: none; }
-  details summary::after {
-    content: ""; width: 8px; height: 8px; margin-right: 4px;
-    border: solid var(--faint); border-width: 0 2px 2px 0; transform: rotate(-45deg); transition: transform 0.2s;
-  }
-  details[open] summary::after { transform: rotate(45deg); }
-  details summary:active { background: var(--pressed); }
-  #advanced { margin-top: 28px; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+  .buttons button { flex: 1 1 auto; }
 
   #toast {
-    position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translate(-50%, 8px);
-    max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 20px; font-size: 15px;
-    background: var(--card); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18); opacity: 0; pointer-events: none;
-    transition: opacity 0.2s, transform 0.2s;
+    position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom));
+    max-width: calc(100% - 40px); padding: 10px 18px; border-radius: 999px;
+    background: var(--ink); color: var(--paper); font-size: 15px; font-weight: 600;
+    opacity: 0; transform: translate(-50%, 8px); pointer-events: none; transition: opacity 0.2s, transform 0.2s;
   }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #toast.error { background: var(--danger); color: #fff; }
+  @media (prefers-reduced-motion: reduce) { #toast, summary::before { transition: none; } }
 </style>
 </head>
 <body>
   <header>
-    <h1>JevBlock</h1>
-    <p class="muted">Changes save as you make them and apply to pages you open or reload.</p>
+    <img src="icon-96.png" alt="">
+    <div>
+      <h1>JevBlock</h1>
+      <p class="muted">Changes save automatically. Reload a page to apply them.</p>
+    </div>
   </header>
 
-  <h2>What to hide</h2>
-  <div class="card" id="categories">
-    <button class="row-button" id="add" type="button">Add category</button>
-  </div>
-  <p class="foot">Jev sorts each part of a page into one of these and hides it when it falls into categories you switched on. Tap one to change its description; describe it the way you'd explain it to a person.</p>
+  <section>
+    <h2>What to hide</h2>
+    <p class="small muted">Jev sorts each part of a page into one of these categories. Parts in a checked category are hidden.</p>
+    <ul class="cats" id="categories"></ul>
+    <button id="add" type="button">Add category</button>
+  </section>
 
-  <h2>Certainty</h2>
-  <div class="card">
+  <section>
+    <h2>Certainty</h2>
+    <p class="small muted">How sure Jev has to be that something belongs in a checked category before it's hidden.</p>
     <div class="slider">
-      <div class="slider-top"><span>Hide at</span><span id="thresholdValue" class="muted"></span></div>
       <input type="range" id="threshold" min="0.3" max="0.95" step="0.05" aria-label="Certainty needed to hide">
-      <div class="slider-ends small muted"><span>Hides more</span><span>Fewer mistakes</span></div>
+      <span id="thresholdValue"></span>
     </div>
-  </div>
-  <p class="foot">How sure Jev has to be before something is hidden.</p>
+    <div class="slider-ends small muted"><span>Hides more</span><span>Fewer mistakes</span></div>
+  </section>
 
-  <h2>Paused sites</h2>
-  <div class="card" id="paused">
-    <form class="row" id="addHost">
+  <section>
+    <h2>Paused sites</h2>
+    <p class="small muted">JevBlock doesn't run on these sites or their subdomains. You can also pause a site from the JevBlock button in Safari.</p>
+    <form id="addHost">
       <input type="text" id="newHost" placeholder="example.com" inputmode="url" spellcheck="false" autocapitalize="off" autocorrect="off" aria-label="Site to pause">
-      <button type="submit">Add</button>
+      <button type="submit">Pause</button>
     </form>
-  </div>
-  <p class="foot">JevBlock doesn't run on these sites or their subdomains. You can also pause a site from the JevBlock menu in Safari.</p>
+    <ul class="hosts" id="hosts"></ul>
+  </section>
 
   <details id="advanced">
-    <summary class="card row">Advanced</summary>
+    <summary>Advanced settings</summary>
 
-    <h2>Extra elements to check</h2>
-    <div class="card">
-      <label class="field">
-        <span>CSS selectors, one per line</span>
-        <textarea id="extraSelectors" spellcheck="false" autocapitalize="off" autocorrect="off" placeholder="aside"></textarea>
-      </label>
-    </div>
-    <p class="foot">JevBlock already checks the whole page in blocks. Selectors here have smaller parts judged on their own, e.g. <code>[class*="comment"]</code>.</p>
+    <section>
+      <h2>Extra elements to check</h2>
+      <p class="small muted">JevBlock already checks the whole page in blocks. Add CSS selectors, one per line, to have smaller parts judged on their own.</p>
+      <textarea id="extraSelectors" rows="3" spellcheck="false" autocapitalize="off" autocorrect="off" placeholder='aside&#10;[class*="comment"]' aria-label="Extra CSS selectors"></textarea>
+    </section>
 
-    <h2>Jev</h2>
-    <div class="card">
+    <section>
+      <h2>Jev connection</h2>
+      <p class="small muted" id="usage">No requests yet.</p>
       <label class="field"><span>Endpoint</span><input type="url" id="endpoint" spellcheck="false" autocapitalize="off" autocorrect="off"></label>
       <label class="field"><span>Model</span><input type="text" id="model" spellcheck="false" autocapitalize="off" autocorrect="off"></label>
       <label class="field"><span>API key</span><input type="password" id="apiKey" autocomplete="off" placeholder="Not needed for jev-1.13-free"></label>
-      <button class="row-button" id="test" type="button">Test connection</button>
-    </div>
-    <p class="foot" id="testResult"></p>
-
-    <h2>Usage</h2>
-    <div class="card" id="usage">
-      <div class="row value"><span>Today</span><span id="usageToday">–</span></div>
-      <div class="row value"><span>Total</span><span id="usageTotal">–</span></div>
-      <div class="row value"><span>Requests</span><span id="usageRequests">–</span></div>
-    </div>
-    <p class="foot" id="usageCost"></p>
+      <div class="test">
+        <button id="test" type="button">Test connection</button>
+        <span id="testResult" class="small muted"></span>
+      </div>
+    </section>
   </details>
 
-  <h2>Data</h2>
-  <div class="card">
-    <button class="row-button danger" id="clearAll" type="button">Forget all sites</button>
-    <button class="row-button danger" id="resetCategories" type="button">Restore default categories</button>
-  </div>
-  <p class="foot">Forgetting clears remembered verdicts and learned rules for every site.</p>
+  <section>
+    <h2>Reset</h2>
+    <p class="small muted">Forgetting sites clears what Jev decided and learned on each of them, so pages are checked from scratch.</p>
+    <div class="buttons">
+      <button class="danger" id="clearAll" type="button">Forget all sites</button>
+      <button class="danger" id="resetCategories" type="button">Restore default categories</button>
+    </div>
+  </section>
 
   <div id="toast" role="status"></div>
   <script src="options.js"></script>

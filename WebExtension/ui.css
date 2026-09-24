@@ -1,156 +1,142 @@
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("instrument-sans.woff2") format("woff2");
+  font-weight: 400 700;
+  font-stretch: 75% 100%;
+  font-display: swap;
+}
+/* Colors come from the app icon's teal. */
 :root {
   color-scheme: light dark;
-  --fg: #000;
-  --muted: rgba(60, 60, 67, 0.6);
-  --faint: rgba(60, 60, 67, 0.3);
-  --bg: #f2f2f7;
-  --card: #fff;
-  --fill: rgba(118, 118, 128, 0.12);
-  --pressed: rgba(120, 120, 128, 0.16);
-  --off: rgba(120, 120, 128, 0.16);
-  --line: rgba(60, 60, 67, 0.29);
-  --accent: #007aff;
-  --danger: #ff3b30;
-  --green: #34c759;
+  --paper: #eef3f2;
+  --surface: #fff;
+  --ink: #142b2e;
+  --muted: #587072;
+  --line: #d3dedd;
+  --accent: #0e7c68;
+  --accent-ink: #fff;
+  --accent-soft: #dcefea;
+  --danger: #c43d2f;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --fg: #fff;
-    --muted: rgba(235, 235, 245, 0.6);
-    --faint: rgba(235, 235, 245, 0.3);
-    --bg: #000;
-    --card: #1c1c1e;
-    --fill: rgba(118, 118, 128, 0.24);
-    --pressed: rgba(120, 120, 128, 0.24);
-    --off: rgba(120, 120, 128, 0.32);
-    --line: rgba(84, 84, 88, 0.65);
-    --accent: #0a84ff;
-    --danger: #ff453a;
-    --green: #30d158;
+    --paper: #0f1a1b;
+    --surface: #172425;
+    --ink: #e3eeec;
+    --muted: #8fa6a5;
+    --line: #2d3e3f;
+    --accent: #45c7a8;
+    --accent-ink: #062520;
+    --accent-soft: #183a34;
+    --danger: #ff7b6b;
   }
 }
 * { box-sizing: border-box; }
-html { background: var(--bg); }
+html { background: var(--paper); }
 body {
   margin: 0;
-  font: 17px/1.3 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  color: var(--fg);
-  background: var(--bg);
+  font: 16px/1.5 "Instrument Sans", system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--paper);
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
 }
-h1 { font-size: 34px; line-height: 1.2; font-weight: 700; margin: 0; }
-h2 {
-  font-size: 13px;
-  font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: var(--muted);
-  margin: 28px 16px 7px;
-}
-.foot { font-size: 13px; line-height: 1.4; color: var(--muted); margin: 7px 16px 0; }
+h1, h2, p { margin: 0; }
+h1 { font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 21px; line-height: 1.25; font-weight: 600; letter-spacing: -0.01em; }
 .muted { color: var(--muted); }
-.small { font-size: 13px; }
+.small { font-size: 14px; line-height: 1.45; }
 .error { color: var(--danger); }
-
-/* Inset grouped list: a card of rows with separators that start at the text. */
-.card { background: var(--card); border-radius: 12px; overflow: hidden; }
-.card > * { position: relative; }
-.card > * + *::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 16px;
-  right: 0;
-  border-top: 0.5px solid var(--line);
-  pointer-events: none;
-}
-.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 10px 16px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 button {
   font: inherit;
-  color: var(--accent);
-  background: none;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  margin: 0;
+  font-weight: 600;
+  line-height: 1.25;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
   cursor: pointer;
 }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 button.danger { color: var(--danger); }
-button:disabled { color: var(--faint); cursor: default; }
-.row-button { display: block; width: 100%; min-height: 48px; padding: 13px 16px; text-align: left; }
-.row-button:active { background: var(--pressed); }
+button.link { padding: 4px 0; border: 0; background: none; color: var(--accent); }
+button.link.danger { color: var(--danger); }
+button:disabled { opacity: 0.45; cursor: default; }
 
 input[type="text"], input[type="url"], input[type="password"], textarea {
   font: inherit;
   width: 100%;
   margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  outline: none;
-  background: transparent;
-  color: var(--fg);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
 }
-textarea { display: block; resize: none; }
-::placeholder { color: var(--faint); }
+input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+textarea { display: block; resize: vertical; line-height: 1.45; }
+::placeholder { color: var(--muted); opacity: 0.7; }
 
-/* Label above a borderless input, like iOS forms. */
-.field { display: block; padding: 10px 16px 11px; }
-.field > span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 3px; }
+/* Label above its input. */
+.field { display: block; }
+.field > span { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.field + .field { margin-top: 14px; }
 
-/* iOS-style switch */
-input[type="checkbox"].switch {
+/* Checkbox */
+input[type="checkbox"].check {
   appearance: none;
   -webkit-appearance: none;
-  width: 51px;
-  height: 31px;
-  border-radius: 31px;
-  background: var(--off);
-  position: relative;
   flex: none;
+  display: grid;
+  place-content: center;
+  width: 24px;
+  height: 24px;
   margin: 0;
+  border: 2px solid var(--muted);
+  border-radius: 7px;
+  background: var(--surface);
   cursor: pointer;
-  transition: background 0.2s;
 }
-input[type="checkbox"].switch::after {
+input[type="checkbox"].check::after {
   content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 27px;
-  height: 27px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.16);
-  transition: transform 0.2s;
+  width: 11px;
+  height: 6px;
+  margin-top: -3px;
+  border: solid var(--accent-ink);
+  border-width: 0 0 2.5px 2.5px;
+  transform: rotate(-45deg);
+  opacity: 0;
 }
-input[type="checkbox"].switch:checked { background: var(--green); }
-input[type="checkbox"].switch:checked::after { transform: translateX(20px); }
-input[type="checkbox"].switch:disabled { opacity: 0.5; cursor: default; }
+input[type="checkbox"].check:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"].check:checked::after { opacity: 1; }
+input[type="checkbox"].check:disabled { opacity: 0.45; cursor: default; }
 
-/* iOS-style slider; --pct is the filled share, set from JS. */
+/* Slider; --pct is the filled share, set from JS. */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   display: block;
   width: 100%;
-  height: 28px;
+  height: 32px;
   margin: 0;
   background: transparent;
+  cursor: pointer;
 }
 input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(var(--accent), var(--accent)) 0 0 / var(--pct, 50%) 100% no-repeat, var(--off);
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(var(--accent), var(--accent)) 0 0 / var(--pct, 50%) 100% no-repeat, var(--line);
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 28px;
-  height: 28px;
-  margin-top: -12px;
+  width: 24px;
+  height: 24px;
+  margin-top: -9px;
+  border: 4px solid var(--surface);
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 0.5px 4px rgba(0, 0, 0, 0.12), 0 6px 13px rgba(0, 0, 0, 0.12);
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }

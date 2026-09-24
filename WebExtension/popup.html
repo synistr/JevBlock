@@ -5,44 +5,50 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="ui.css">
 <style>
-  body { padding: 16px; min-width: 300px; }
-  header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 0 4px; }
-  h1 { font-size: 28px; }
-  #host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
-  #count { font-size: 44px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
-  .summary { display: flex; align-items: center; gap: 12px; padding: 16px; }
-  #labels { list-style: none; margin: 0; padding: 0; }
+  body { min-width: 300px; padding: 20px; }
+  header { display: flex; align-items: center; gap: 12px; }
+  header img { width: 36px; height: 36px; border-radius: 8px; }
+  header div { min-width: 0; }
+  h1 { font-size: 21px; }
+  #host { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+  .summary { display: flex; align-items: baseline; gap: 10px; margin-top: 24px; }
+  #count { font-size: 44px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  #labels { list-style: none; margin: 14px 0 0; padding: 0; }
   #labels:empty { display: none; }
-  #labels li { display: flex; justify-content: space-between; min-height: 44px; align-items: center; padding: 0 16px; position: relative; }
-  #labels li + li::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: 0.5px solid var(--line); }
-  #status { font-size: 13px; line-height: 1.4; margin: 7px 16px 0; }
+  #labels li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); }
+  #status { margin-top: 12px; }
   #status:empty { display: none; }
+  .options { margin-top: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  .options label { display: flex; align-items: center; gap: 12px; padding: 13px 16px; cursor: pointer; }
+  .options label + label { border-top: 1px solid var(--line); }
+  .buttons { display: flex; gap: 8px; margin-top: 16px; }
+  .buttons button { flex: 1; }
 </style>
 </head>
 <body>
   <header>
-    <h1>JevBlock</h1>
-    <span id="host" class="muted small"></span>
+    <img src="icon-96.png" alt="">
+    <div>
+      <h1>JevBlock</h1>
+      <span id="host" class="muted"></span>
+    </div>
   </header>
 
-  <div class="card" style="margin-top: 16px">
-    <div class="summary">
-      <span id="count">–</span>
-      <span class="muted">hidden on this page</span>
-    </div>
-    <ul id="labels"></ul>
+  <div class="summary">
+    <span id="count">–</span>
+    <span class="muted">hidden on this page</span>
   </div>
-  <p id="status" class="muted"></p>
+  <ul id="labels"></ul>
+  <p id="status" class="small muted"></p>
 
-  <h2>This site</h2>
-  <div class="card">
-    <div class="row"><span>Show hidden elements</span><input type="checkbox" class="switch" id="reveal"></div>
-    <div class="row"><span>Pause on this site</span><input type="checkbox" class="switch" id="pause"></div>
+  <div class="options">
+    <label><input type="checkbox" class="check" id="reveal"><span>Show hidden elements</span></label>
+    <label><input type="checkbox" class="check" id="pause"><span>Pause on this site</span></label>
   </div>
 
-  <div class="card" style="margin-top: 28px">
-    <button class="row-button" id="settings" type="button">Settings</button>
-    <button class="row-button danger" id="reset" type="button">Forget this site</button>
+  <div class="buttons">
+    <button id="settings" type="button">Settings</button>
+    <button class="danger" id="reset" type="button">Forget this site</button>
   </div>
   <script src="popup.js"></script>
 </body>
