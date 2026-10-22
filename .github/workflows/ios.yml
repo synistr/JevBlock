@@ -1,9 +1,15 @@
 name: iOS
 
-# Every push to master archives an ad hoc–signed Release IPA and uploads it, encrypted, as the
+# Every push to master builds an ad hoc–signed Release IPA and uploads it, encrypted, as the
 # `jevblock-ipa` artifact (artifacts of public repos are downloadable by anyone, and the embedded
 # profile lists device UDIDs). The VPS pulls and decrypts it. Without signing secrets, runs are
 # compile-only.
+#
+# Built with Xcode 27 or newer (the iOS 27 SDK), and incrementally (as in
+# ~/chattr-ota/templates/ios.yml on the VPS): DerivedData is cached between runs, unchanged files get
+# back the times the last build saw, and the app is built rather than archived (an archive
+# recompiles everything), then zipped into the IPA. The cache is encrypted with ARTIFACT_KEY, since a
+# public repo's caches are readable beyond it and DerivedData holds the signed app.
 
 on:
   push:
@@ -22,13 +28,11 @@ permissions:
 
 env:
   XCODEGEN_VERSION: 2.46.0
-  TEAM_ID: LB39V3CF77
-  APP_BUNDLE_ID: com.fkeil.JevBlock
-  EXT_BUNDLE_ID: com.fkeil.JevBlock.Extension
 
 jobs:
   build:
-    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
+    # GitHub's Xcode 27 image. Override without a code change: gh variable set MACOS_RUNNER --body <label>
+    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
     timeout-minutes: 30
     env:
       HAS_SIGNING: ${{ secrets.IOS_DIST_P12_BASE64 != '' && secrets.IOS_ADHOC_PROFILE_APP_BASE64 != '' && secrets.IOS_ADHOC_PROFILE_EXT_BASE64 != '' && secrets.ARTIFACT_KEY != '' }}
@@ -36,11 +40,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Select Xcode
+      - name: Select Xcode 27
         run: |
-          # Newest released Xcode 26+/27+. Runner images ship betas next to releases and alias them
-          # (Xcode_27.1.app -> Xcode_27.1_beta.app), so skip apps whose real path says beta, plus
-          # seed builds like 27A5228h.
+          # Newest released Xcode 27+, for the iOS 27 SDK; no falling back to an older one. Runner
+          # images ship betas next to releases and alias them (Xcode_27.2.app ->
+          # Xcode_27.2_beta_2.app), so skip apps whose real path says beta, plus seed builds like
+          # 27A5228h.
           pick=$(for app in /Applications/Xcode*.app; do
               plist="$app/Contents/version.plist"
               [ -f "$plist" ] || continue
@@ -50,11 +55,21 @@ jobs:
               echo "$app -> $real: $version ($build)" >&2
               [[ $real == *[Bb]eta* ]] && continue
               [[ $build =~ ^[0-9]+[A-Z]5[0-9]{3}[a-z]$ ]] && continue
-              [[ ${version%%.*} -ge 26 ]] && echo "$version $app"
+              [[ ${version%%.*} -ge 27 ]] || continue
+              echo "$version $app"
             done | sort -V | tail -1 | cut -d' ' -f2-)
-          [ -n "$pick" ] || { echo "::error::No released Xcode 26+ on this runner"; exit 1; }
+          [ -n "$pick" ] || { echo "::error::No released Xcode 27+ on this runner (runs-on should be xcode-27)"; exit 1; }
           echo "DEVELOPER_DIR=$pick/Contents/Developer" >> "$GITHUB_ENV"
           DEVELOPER_DIR="$pick/Contents/Developer" xcodebuild -version
+
+      # Started right after picking Xcode, so a fresh runner loads Xcode's tools from disk while the
+      # cache restores rather than during the build (the first xcodebuild on a runner spends ~3s more
+      # starting up and asking them about themselves), as in Flow.
+      - name: Warm up Xcode
+        run: |
+          nohup bash -c 'xcodebuild -version; xcrun --sdk iphoneos --show-sdk-path
+            xcrun clang -v -E -dM -x c /dev/null; xcrun swiftc --version; xcrun swift-frontend -version
+            xcrun ld -version_details; xcrun actool --version' > "$RUNNER_TEMP/warm-xcode.log" 2>&1 &
 
       - name: Install XcodeGen
         run: |
@@ -62,6 +77,15 @@ jobs:
             "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
           unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+      # The last build's DerivedData (see Pack DerivedData).
+      - name: Restore DerivedData
+        if: env.HAS_SIGNING == 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/deriveddata.tar.zst.enc
+          key: deriveddata-${{ github.run_id }}
+          restore-keys: deriveddata-
 
       - name: Install signing assets
         if: env.HAS_SIGNING == 'true'
@@ -107,6 +131,90 @@ jobs:
             xcodegen generate --spec project.yml --quiet
           fi
 
+      # After the project is generated, since generating can rewrite files.
+      - name: Prepare incremental build
+        if: env.HAS_SIGNING == 'true'
+        shell: bash  # with pipefail
+        env:
+          ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+        run: |
+          # file-times save|restore LIST. A fresh checkout dates every file "now", which would make the
+          # cached DerivedData see every file as changed. `save` records each tracked file's content
+          # hash and time; `restore` gives every file whose content is unchanged its recorded time
+          # back. The others are cut to whole seconds, as recorded, so the next run restores exactly
+          # the time this build saw. Directories then get their newest file's time, since folder
+          # inputs like asset catalogs go by directory times.
+          mkdir -p "$RUNNER_TEMP/bin"
+          cat > "$RUNNER_TEMP/bin/file-times" <<'EOF'
+          #!/bin/bash
+          set -euo pipefail
+          list=$2
+          case $1 in
+            save)
+              git -c core.quotepath=off ls-files -s | perl -ne '
+                chomp;
+                my ($meta, $path) = split /\t/, $_, 2;
+                my $hash = (split / /, $meta)[1];
+                my $time = (stat $path)[9];
+                print "$hash $time\t$path\n" if defined $time;
+              ' > "$list"
+              ;;
+            restore)
+              [ -f "$list" ] || list=/dev/null
+              git -c core.quotepath=off ls-files -s | perl -ne '
+                BEGIN {
+                  open my $saved, "<", shift @ARGV or die;
+                  while (<$saved>) {
+                    chomp;
+                    my ($meta, $path) = split /\t/, $_, 2;
+                    $recorded{$path} = [split / /, $meta];
+                  }
+                }
+                chomp;
+                my ($meta, $path) = split /\t/, $_, 2;
+                my $hash = (split / /, $meta)[1];
+                my $old = $recorded{$path};
+                my $time = $old && $old->[0] eq $hash ? $old->[1] : (stat $path)[9] // next;
+                utime $time, $time, $path;
+                for (my $dir = $path; $dir =~ s{/[^/]+$}{};) {
+                  $newest{$dir} = $time if $time > ($newest{$dir} // 0);
+                }
+                END { utime $newest{$_}, $newest{$_}, $_ for keys %newest }
+              ' "$list"
+              ;;
+          esac
+          EOF
+          chmod +x "$RUNNER_TEMP/bin/file-times"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+          command -v zstd > /dev/null || brew install --quiet zstd
+          dd="$RUNNER_TEMP/DerivedData"
+          archive="$RUNNER_TEMP/deriveddata.tar.zst.enc"
+          if [ -f "$archive" ]; then
+            if "$(brew --prefix openssl@3)/bin/openssl" enc -d -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 \
+                -pass env:ARTIFACT_KEY -in "$archive" | zstd -q -d | tar -C "$RUNNER_TEMP" -xf -; then
+              size=$(du -sm "$dd" | cut -f1)
+              echo "DerivedData from the last build: $size MB"
+              # Restoring gets slower with size, so start over if it ever passes 1 GB.
+              if [ "$size" -gt 1024 ]; then
+                echo "Over 1 GB; building from scratch"
+                rm -rf "$dd"
+              fi
+            else
+              echo "::warning::Couldn't unpack the cached DerivedData; building from scratch"
+              rm -rf "$dd"
+            fi
+            rm "$archive"
+          else
+            echo "No cached DerivedData; building from scratch"
+          fi
+          # The app is put together anew (copied resources, link, signature) from the cached objects,
+          # so nothing the project dropped lingers in it.
+          rm -rf "$dd"/Build/Products/*-iphoneos/*.app
+          "$RUNNER_TEMP/bin/file-times" restore "$dd/file-times.txt"
+          # Xcode also checks inodes, which never survive a cache restore.
+          defaults write com.apple.dt.XCBuild IgnoreFileSystemDeviceInodeChanges -bool YES
+
       - name: Compile check (unsigned)
         if: env.HAS_SIGNING != 'true'
         run: |
@@ -116,56 +224,46 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             COMPILER_INDEX_STORE_ENABLE=NO CODE_SIGNING_ALLOWED=NO
 
-      - name: Archive
+      # A plain build rather than an archive: `xcodebuild archive` recompiles everything every time,
+      # while a build reuses the cached DerivedData, and it already signs the app and the extension
+      # for ad hoc (project.ci.yml). For speed: Swift compiles file by file (Release otherwise
+      # compiles each module as a whole, so any change recompiles all of it), no debug info or dSYM
+      # (crash logs still get function names from the unstripped binary), no localizable-strings
+      # extraction, and no compilation cache (its keys cover all of a module's sources, so it rarely
+      # hits).
+      - name: Build
         if: env.HAS_SIGNING == 'true'
         run: |
-          ci/xcodebuild-quiet.sh archive \
+          ci/xcodebuild-quiet.sh build \
             -project JevBlock.xcodeproj -scheme JevBlock -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath "$RUNNER_TEMP/JevBlock.xcarchive" \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO COMPILATION_CACHE_ENABLE_CACHING=NO \
+            SWIFT_COMPILATION_MODE=singlefile \
+            GCC_GENERATE_DEBUGGING_SYMBOLS=NO DEBUG_INFORMATION_FORMAT=dwarf \
+            SWIFT_EMIT_LOC_STRINGS=NO \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+          file-times save "$RUNNER_TEMP/DerivedData/file-times.txt"
+          log="$RUNNER_TEMP/xcodebuild.log"
+          echo "$(grep -c '^SwiftCompile ' "$log") Swift and $(grep -c '^CompileC ' "$log") C compile tasks ran"
 
-      - name: Export ad hoc IPA
-        if: env.HAS_SIGNING == 'true'
-        run: |
-          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key><string>release-testing</string>
-            <key>teamID</key><string>$TEAM_ID</string>
-            <key>signingStyle</key><string>manual</string>
-            <key>signingCertificate</key><string>Apple Distribution</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>$APP_BUNDLE_ID</key><string>$APP_PROFILE_NAME</string>
-              <key>$EXT_BUNDLE_ID</key><string>$EXT_PROFILE_NAME</string>
-            </dict>
-            <key>thinning</key><string>&lt;none&gt;</string>
-          </dict>
-          </plist>
-          EOF
-          ci/xcodebuild-quiet.sh -exportArchive \
-            -archivePath "$RUNNER_TEMP/JevBlock.xcarchive" \
-            -exportPath "$RUNNER_TEMP/export" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
-
-      - name: Verify, describe and encrypt the IPA
+      - name: Package, verify, describe and encrypt the IPA
+        id: package
         if: env.HAS_SIGNING == 'true'
         env:
           ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
         run: |
-          out="$RUNNER_TEMP/out"
-          mkdir -p "$out"
-          unzip -q "$RUNNER_TEMP/export/JevBlock.ipa" -d "$RUNNER_TEMP/ipa"
-          app="$RUNNER_TEMP/ipa/Payload/JevBlock.app"
+          export_dir="$RUNNER_TEMP/export"
+          app="$export_dir/Payload/JevBlock.app"
           appex="$app/PlugIns/JevBlockExtension.appex"
+          mkdir -p "$export_dir/Payload"
+          cp -R "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/JevBlock.app" "$app"
           codesign --verify --deep --strict "$app"
           test -f "$appex/manifest.json" || { echo "::error::manifest.json is not at the root of the appex"; ls -R "$appex"; exit 1; }
           xcrun vtool -show-build "$app/JevBlock" | grep -E 'platform|minos|sdk'
+          (cd "$export_dir" && zip -qry JevBlock.ipa Payload)
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
           jq -n \
             --arg build "$BUILD_NUMBER" \
             --arg version "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Info.plist")" \
@@ -180,7 +278,7 @@ jobs:
           # OpenSSL 3 from Homebrew, so the VPS (OpenSSL 3) decrypts with the same KDF.
           openssl="$(brew --prefix openssl@3)/bin/openssl"
           "$openssl" enc -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -salt -pass env:ARTIFACT_KEY \
-            -in "$RUNNER_TEMP/export/JevBlock.ipa" -out "$out/app.ipa.enc"
+            -in "$export_dir/JevBlock.ipa" -out "$out/app.ipa.enc"
 
       - name: Upload IPA
         if: env.HAS_SIGNING == 'true'
@@ -190,6 +288,29 @@ jobs:
           path: ${{ runner.temp }}/out/
           retention-days: 3
           compression-level: 0
+
+      # Full pax, not tar's default "restricted" pax, which drops the sub-second part of file times:
+      # Xcode compares its outputs' times exactly, so every task would rerun. always(): a newer push
+      # cancelling this run after the upload still lets it save, so that run starts from this cache.
+      - name: Pack DerivedData
+        id: pack
+        if: always() && steps.package.outcome == 'success'
+        shell: bash  # with pipefail
+        env:
+          ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+        run: |
+          archive="$RUNNER_TEMP/deriveddata.tar.zst.enc"
+          tar --format pax -C "$RUNNER_TEMP" -cf - DerivedData | zstd -q -T0 \
+            | "$(brew --prefix openssl@3)/bin/openssl" enc -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -salt \
+                -pass env:ARTIFACT_KEY -out "$archive"
+          echo "DerivedData: $(du -sm "$RUNNER_TEMP/DerivedData" | cut -f1) MB, packed $(du -sm "$archive" | cut -f1) MB"
+
+      - name: Save DerivedData
+        if: always() && steps.pack.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/deriveddata.tar.zst.enc
+          key: deriveddata-${{ github.run_id }}
 
       - name: Upload xcodebuild log
         if: failure()
